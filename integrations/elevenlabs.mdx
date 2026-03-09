@@ -1,0 +1,370 @@
+---
+title: ElevenLabs Integration
+description: Generate voice narration for winner announcements
+icon: volume
+---
+
+## Overview
+
+**ElevenLabs** generates voice narration for the Dream Foundry winner showcase. After selecting a winning agent, ElevenLabs creates a professional audio announcement that summarizes the competition and presents the results.
+
+<Info>
+  ElevenLabs integration is optional. If not configured, Dream Foundry completes without audio generation.
+</Info>
+
+## Why Voice Narration?
+
+The **Dream Awakening** phase (Phase 5) presents the winning agent to the world. Voice narration adds:
+
+- **Professionalism**: Polished presentation for stakeholders
+- **Accessibility**: Audio format for different consumption preferences
+- **Marketing**: Shareable content for demos and showcases
+- **Documentation**: Permanent record of competition results
+
+## Setup and Configuration
+
+<Steps>
+  <Step title="Create ElevenLabs Account">
+    Sign up at [elevenlabs.io](https://elevenlabs.io) and create an account.
+  </Step>
+
+  <Step title="Get API Key">
+    Navigate to **Profile** → **API Keys** and generate a new key.
+  </Step>
+
+  <Step title="Clone Your Voice (Optional)">
+    For personalized narration, clone your voice:
+    1. Go to **Voice Lab** → **Add Voice**
+    2. Upload 1-2 minutes of clean audio samples
+    3. Wait for processing (~10 minutes)
+    4. Copy the voice ID (looks like `EXAVITQu4vr4xnSDxMaL`)
+  </Step>
+
+  <Step title="Configure Environment">
+    Add credentials to `.env`:
+    
+    ```bash
+    ELEVENLABS_API_KEY=your_api_key_here
+    ELEVENLABS_CLONED_VOICE_ID=your_voice_id_here  # Optional
+    ```
+  </Step>
+</Steps>
+
+## How It Works
+
+### Script Generation
+
+ElevenLabs integration starts by generating a narration script:
+
+```python src/elevenlabs.py
+def generate_winner_script(
+    winner_name: str,
+    winner_score: float,
+    objective: str,
+) -> str:
+    """Generate the narration script for the winner announcement."""
+    return f"""The winner is {winner_name} with {winner_score:.1f} points.
+
+After competing in the arena, {winner_name} emerged as the clear choice for the objective: {objective}.
+
+The winning code has been published and is ready for review. Another dream successfully forged."""
+```
+
+### Audio Generation
+
+The script is converted to speech using ElevenLabs API:
+
+```python src/elevenlabs.py
+def generate_audio(
+    text: str,
+    output_path: Optional[str] = None,
+    voice_id: Optional[str] = None,
+) -> Optional[bytes]:
+    """Generate audio from text using ElevenLabs API."""
+    api_key, default_voice_id = get_elevenlabs_config()
+    
+    if not api_key:
+        return None
+    
+    # Use provided voice_id, or env var, or ElevenLabs default "Rachel"
+    voice = voice_id or default_voice_id or "EXAVITQu4vr4xnSDxMaL"
+    
+    response = requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{voice}",
+        headers={
+            "xi-api-key": api_key,
+            "Content-Type": "application/json",
+        },
+        json={
+            "text": text,
+            "model_id": "eleven_monolingual_v1",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75,
+            }
+        },
+        timeout=30,
+    )
+    
+    if response.status_code != 200:
+        print(f"[ElevenLabs] Error: {response.status_code}")
+        return None
+    
+    return response.content
+```
+
+### Voice Settings
+
+The voice generation uses these settings:
+
+| Setting | Value | Effect |
+|---------|-------|--------|
+| **stability** | 0.5 | Balance between consistency and expressiveness |
+| **similarity_boost** | 0.75 | Higher = closer to original voice (for clones) |
+| **model** | eleven_monolingual_v1 | English-only model, high quality |
+
+<Note>
+  For multilingual support, use `eleven_multilingual_v2` model instead.
+</Note>
+
+## Usage Examples
+
+### Basic Usage
+
+Generate audio for the winner:
+
+```python
+from src.elevenlabs import generate_winner_audio
+
+audio_bytes = generate_winner_audio(
+    winner_name="Agent Gamma (The Insider)",
+    winner_score=94.4,
+    objective="Generate weekly AI events for Discord",
+    output_path="artifacts/winner_announcement.mp3",
+)
+
+if audio_bytes:
+    print("Audio generated successfully!")
+else:
+    print("ElevenLabs not configured or request failed")
+```
+
+### Custom Script
+
+Generate audio from a custom script:
+
+```python
+from src.elevenlabs import generate_audio
+
+script = """
+Welcome to the Dream Foundry results!
+
+Today, five AI agents competed to generate the perfect Discord post.
+After rigorous evaluation, we have a winner.
+
+Congratulations to Agent Gamma!
+"""
+
+audio = generate_audio(
+    text=script,
+    output_path="artifacts/custom_announcement.mp3",
+)
+```
+
+### Using a Specific Voice
+
+Use a different voice for narration:
+
+```python
+from src.elevenlabs import generate_audio
+
+# Use ElevenLabs preset voices
+VOICES = {
+    "rachel": "EXAVITQu4vr4xnSDxMaL",    # Female, clear
+    "adam": "pNInz6obpgDQGcFmaJgB",      # Male, deep
+    "bella": "EXAVITQu4vr4xnSDxMaL",     # Female, soft
+}
+
+audio = generate_audio(
+    text=script,
+    voice_id=VOICES["adam"],
+    output_path="artifacts/adam_voice.mp3",
+)
+```
+
+## Configuration Check
+
+Check if ElevenLabs is properly configured:
+
+```python src/elevenlabs.py
+def is_configured() -> bool:
+    """Check if ElevenLabs is properly configured."""
+    api_key, _ = get_elevenlabs_config()
+    return api_key is not None
+```
+
+Usage:
+
+```python
+from src.elevenlabs import is_configured
+
+if is_configured():
+    print("ElevenLabs ready!")
+else:
+    print("Add ELEVENLABS_API_KEY to .env")
+```
+
+## Output Format
+
+Generated audio files are:
+
+- **Format**: MP3
+- **Quality**: 128 kbps (default)
+- **Sample Rate**: 44.1 kHz
+- **Channels**: Mono
+- **Duration**: ~20-40 seconds for winner announcements
+
+## Integration with Streamlit UI
+
+The Streamlit app can play generated audio:
+
+```python app.py
+import streamlit as st
+from src.elevenlabs import generate_winner_audio, is_configured
+
+if is_configured():
+    st.header("🎤 Winner Announcement")
+    
+    audio_bytes = generate_winner_audio(
+        winner_name=winner_name,
+        winner_score=winner_score,
+        objective=objective,
+    )
+    
+    if audio_bytes:
+        st.audio(audio_bytes, format="audio/mp3")
+        st.success("Audio generated successfully!")
+else:
+    st.warning("ElevenLabs not configured. Add ELEVENLABS_API_KEY to .env")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Keep scripts concise">
+    ElevenLabs works best with scripts under 1000 characters:
+    
+    ```python
+    # Good: Clear and concise
+    script = "The winner is Agent Gamma with 94.4 points."
+    
+    # Avoid: Too verbose
+    script = "After extensive deliberation and comprehensive analysis..."
+    ```
+  </Step>
+
+  <Step title="Use punctuation for pacing">
+    Periods and commas control pacing:
+    
+    ```python
+    # Good: Natural pauses
+    script = "The winner is Agent Gamma. Score: 94.4 points."
+    
+    # Avoid: Run-on sentence
+    script = "The winner is Agent Gamma score 94.4 points"
+    ```
+  </Step>
+
+  <Step title="Test voice settings">
+    Experiment with stability and similarity:
+    
+    ```python
+    # More stable (consistent but less expressive)
+    voice_settings = {"stability": 0.8, "similarity_boost": 0.5}
+    
+    # More expressive (varied but less consistent)
+    voice_settings = {"stability": 0.3, "similarity_boost": 0.9}
+    ```
+  </Step>
+
+  <Step title="Handle API failures gracefully">
+    Always check for None returns:
+    
+    ```python
+    audio = generate_audio(script)
+    if audio:
+        save_to_file(audio)
+    else:
+        log("Skipping audio generation")
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### API Key Invalid
+
+**Error**: `[ElevenLabs] Error: 401`
+
+**Solution**:
+- Verify API key is correct in `.env`
+- Check key hasn't expired at [elevenlabs.io/profile](https://elevenlabs.io/profile)
+- Ensure key doesn't start with `your_` (placeholder)
+
+### Voice ID Not Found
+
+**Error**: `[ElevenLabs] Error: 404`
+
+**Solution**:
+- Verify voice ID exists in your ElevenLabs account
+- Use default voice by omitting `ELEVENLABS_CLONED_VOICE_ID`
+- Check voice ID format (should be alphanumeric, ~20 characters)
+
+### Timeout Errors
+
+**Error**: Request times out after 30 seconds
+
+**Solution**:
+- Check network connectivity
+- Try a shorter script (under 500 characters)
+- Increase timeout in `src/elevenlabs.py:86`
+
+### Rate Limiting
+
+**Error**: `[ElevenLabs] Error: 429 - Too many requests`
+
+**Solution**:
+- Free tier: 10,000 characters/month
+- Wait for rate limit reset (check response headers)
+- Upgrade to paid plan for higher limits
+
+## Cost Considerations
+
+### Character Usage
+
+ElevenLabs charges by character count:
+
+```python
+script = generate_winner_script("Agent Gamma", 94.4, objective)
+char_count = len(script)  # ~150 characters
+print(f"This will use {char_count} characters")
+```
+
+### Pricing Tiers (as of 2026)
+
+| Plan | Characters/Month | Cost |
+|------|------------------|------|
+| Free | 10,000 | $0 |
+| Starter | 30,000 | $5 |
+| Creator | 100,000 | $22 |
+| Pro | 500,000 | $99 |
+
+<Note>
+  Winner announcements use ~150 characters each. On the free tier, you can generate ~60 announcements per month.
+</Note>
+
+## Related
+
+- [Five Phases](/concepts/five-phases)
+- [Discord Integration](/integrations/discord)
+- [Running the Forge](/guides/running-forge)

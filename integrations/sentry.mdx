@@ -1,0 +1,339 @@
+---
+title: Sentry Integration
+description: Monitor errors and stability across candidate agents
+icon: shield-check
+---
+
+## Overview
+
+**Sentry** monitors runtime errors and crashes during the Dream Foundry competition. When agents fail, Sentry captures detailed error context to help understand failure modes and improve agent reliability.
+
+<Info>
+  Sentry integration is optional. If not configured, Dream Foundry runs normally but without error tracking.
+</Info>
+
+## Why Sentry?
+
+In a competitive multi-agent environment, understanding *why* an agent failed is just as important as knowing *that* it failed:
+
+- **Error context**: Stack traces, variable values, environment state
+- **Frequency patterns**: Is this a one-time crash or consistent failure?
+- **Performance impact**: How do errors affect scoring?
+- **Debugging data**: Real production errors from sandbox execution
+
+## Setup and Configuration
+
+<Steps>
+  <Step title="Create Sentry Project">
+    Sign up at [sentry.io](https://sentry.io) and create a new Python project.
+  </Step>
+
+  <Step title="Get DSN">
+    Copy your Data Source Name (DSN) from the Sentry project settings. It looks like:
+    
+    ```
+    https://abc123@o456789.ingest.sentry.io/987654
+    ```
+  </Step>
+
+  <Step title="Configure Environment">
+    Add your DSN to `.env`:
+    
+    ```bash
+    SENTRY_DSN=https://abc123@o456789.ingest.sentry.io/987654
+    ```
+  </Step>
+
+  <Step title="Install SDK">
+    Sentry SDK is included in requirements:
+    
+    ```bash
+    pip install sentry-sdk
+    ```
+  </Step>
+</Steps>
+
+## Initialization
+
+Sentry is initialized automatically when Dream Foundry starts:
+
+```python forge.py
+def init_sentry():
+    global _sentry_initialized
+    if _sentry_initialized:
+        return True
+    try:
+        import sentry_sdk
+        sentry_dsn = os.getenv("SENTRY_DSN")
+        if sentry_dsn and not sentry_dsn.startswith("https://your"):
+            sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=1.0)
+            _sentry_initialized = True
+            return True
+    except ImportError:
+        pass
+    return False
+```
+
+<Note>
+  The `traces_sample_rate=1.0` means Sentry captures 100% of transactions. Lower this in production to reduce costs.
+</Note>
+
+## Error Capture
+
+### Automatic Capture
+
+When a candidate agent crashes, Sentry automatically captures the error:
+
+```python forge.py
+result = subprocess.run(
+    [sys.executable, script_path, objective, str(output_file)],
+    capture_output=True,
+    text=True,
+    timeout=60,
+)
+
+if result.returncode != 0:
+    error_occurred = True
+    error_message = result.stderr[:500] if result.stderr else f"Exit code {result.returncode}"
+    
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(
+            f"Candidate {candidate_id} failed: {error_message[:200]}",
+            level="error"
+        )
+    except:
+        pass
+```
+
+### What Gets Captured
+
+<CodeGroup>
+
+```python Exit Code Errors
+# When an agent exits with non-zero code
+sentry_sdk.capture_message(
+    f"Candidate {candidate_id} failed: {error_message}",
+    level="error"
+)
+```
+
+```python Exceptions
+# When an agent throws an unhandled exception
+try:
+    run_candidate_local(candidate, objective, artifacts_dir)
+except Exception as e:
+    sentry_sdk.capture_exception(e)
+```
+
+```python Timeouts
+# When an agent exceeds the execution timeout
+try:
+    result = subprocess.run(..., timeout=60)
+except subprocess.TimeoutExpired as e:
+    sentry_sdk.capture_exception(e)
+```
+
+</CodeGroup>
+
+## Context and Tags
+
+Each error includes contextual information:
+
+### Automatic Context
+
+- **Environment**: `forge` (identifies Dream Foundry errors)
+- **Release**: `candidate-{id}` (which agent failed)
+- **Timestamp**: When the error occurred
+- **Stack trace**: Full call stack at error point
+
+### Custom Tags
+
+You can add custom context to errors:
+
+```python
+import sentry_sdk
+
+sentry_sdk.set_tag("candidate_id", "alpha")
+sentry_sdk.set_tag("phase", "arena")
+sentry_sdk.set_context("objective", {
+    "text": objective,
+    "length": len(objective)
+})
+```
+
+## Viewing Errors in Sentry
+
+### Issues Dashboard
+
+After running the forge, check your Sentry project dashboard:
+
+1. Navigate to **Issues** → **All Issues**
+2. Filter by `candidate_id` tag to see agent-specific failures
+3. Click an issue to see:
+   - Full stack trace
+   - Error message and context
+   - Environment details
+   - Frequency and user impact
+
+### Example Error
+
+Here's what a captured error looks like for **Agent Delta (The Crasher)**:
+
+```
+Title: Candidate delta failed: Division by zero
+
+Level: error
+Release: candidate-delta
+Environment: forge
+
+Stack Trace:
+  File "candidates/agent_delta.py", line 42, in generate_events
+    score = total_events / 0  # Intentional crash
+ZeroDivisionError: division by zero
+
+Breadcrumbs:
+  - [08:15:32] Starting candidate delta
+  - [08:15:33] Fetching event sources
+  - [08:15:34] Processing events
+  - [08:15:35] Error: Division by zero
+```
+
+## Flushing Events
+
+Sentry batches events and sends them asynchronously. For immediate visibility (like in demos), flush manually:
+
+```python
+import sentry_sdk
+
+# Capture error
+sentry_sdk.capture_message("Test error", level="error")
+
+# Force immediate send
+sentry_sdk.flush(timeout=2.0)
+```
+
+<Warning>
+  Flushing blocks execution until events are sent. Use sparingly in production.
+</Warning>
+
+## Impact on Scoring
+
+Sentry doesn't directly affect scoring, but the errors it captures do:
+
+### Success Metric (20%)
+
+If Sentry captures an error for a candidate:
+- The candidate likely failed to produce output
+- Success score = 0 points
+
+### Reliability Insights
+
+Sentry helps identify:
+- **Flaky agents**: Intermittent failures
+- **Environment issues**: Sandbox-specific errors
+- **Data quality problems**: Parsing or validation errors
+
+## Best Practices
+
+<Steps>
+  <Step title="Use descriptive error messages">
+    Include candidate ID and context:
+    
+    ```python
+    sentry_sdk.capture_message(
+        f"Candidate {candidate_id} failed: {reason}",
+        level="error"
+    )
+    ```
+  </Step>
+
+  <Step title="Set appropriate sample rates">
+    Capture 100% during development, lower in production:
+    
+    ```python
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        traces_sample_rate=1.0,  # Dev: 100%
+        # traces_sample_rate=0.1,  # Prod: 10%
+    )
+    ```
+  </Step>
+
+  <Step title="Filter sensitive data">
+    Don't send API keys or credentials:
+    
+    ```python
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        before_send=lambda event, hint: (
+            None if 'api_key' in str(event) else event
+        )
+    )
+    ```
+  </Step>
+
+  <Step title="Tag errors by phase">
+    Track which forge phase errors occur in:
+    
+    ```python
+    sentry_sdk.set_tag("phase", "arena")  # or "podium", "awakening"
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Events Not Appearing
+
+**Problem**: Errors aren't showing up in Sentry dashboard.
+
+**Solutions**:
+1. Check DSN is correct in `.env`
+2. Verify Sentry SDK is installed: `pip list | grep sentry`
+3. Force flush: `sentry_sdk.flush(timeout=5.0)`
+4. Check network connectivity to `sentry.io`
+
+### Too Many Events
+
+**Problem**: Hitting Sentry rate limits or quota.
+
+**Solutions**:
+1. Lower sample rate: `traces_sample_rate=0.1`
+2. Add filters to ignore noisy errors
+3. Upgrade Sentry plan for higher quota
+
+### Missing Context
+
+**Problem**: Errors lack useful debugging information.
+
+**Solutions**:
+1. Add custom tags: `sentry_sdk.set_tag("key", "value")`
+2. Include breadcrumbs: `sentry_sdk.add_breadcrumb(message="Step X")`
+3. Set user context: `sentry_sdk.set_user({"id": candidate_id})`
+
+## Performance Monitoring
+
+Beyond errors, Sentry can track performance:
+
+```python
+import sentry_sdk
+
+with sentry_sdk.start_transaction(name="run_candidate") as txn:
+    txn.set_tag("candidate_id", candidate_id)
+    
+    # Your code here
+    result = run_candidate(...)
+    
+    # Add measurements
+    txn.set_measurement("runtime_seconds", result.runtime_seconds)
+    txn.set_measurement("events_generated", len(result.events))
+```
+
+View performance data in Sentry's **Performance** dashboard.
+
+## Related
+
+- [Scoring System](/concepts/scoring-system)
+- [Agent Strategies](/concepts/agent-strategies)
+- [Sandbox Execution](/guides/sandbox-execution)

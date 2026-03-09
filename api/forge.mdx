@@ -1,0 +1,395 @@
+---
+title: "Forge Module"
+description: "Core orchestration module that runs the complete forge loop to execute, score, and select winning candidates"
+---
+
+## Overview
+
+The Forge module is the main orchestration layer of Dream Foundry. It manages the complete lifecycle of running multiple candidate implementations, scoring them across multiple criteria, and selecting the winner.
+
+## Core Function
+
+### run_forge()
+
+Runs the complete forge loop with all candidates.
+
+<ParamField path="objective" type="str" required>
+  The goal for candidates to implement. This is the task description that all candidate agents will attempt to solve.
+  
+  **Example:** `"Generate weekly AI events for Discord"`
+</ParamField>
+
+<ParamField path="use_daytona" type="bool" default="False">
+  If `True`, run candidates in Daytona sandboxes for isolation. Otherwise, runs locally via subprocess.
+  
+  **Note:** Requires `DAYTONA_API_KEY` environment variable to be set. Falls back to local execution if Daytona is not configured.
+</ParamField>
+
+<ParamField path="log_callback" type="Callable[[str, str], None]" optional>
+  Optional callback function for streaming logs during execution.
+  
+  **Signature:** `callback(candidate_id: str, message: str) -> None`
+  
+  This allows real-time monitoring of candidate execution progress.
+</ParamField>
+
+**Returns:** `ForgeResult` - Complete result object with all scoring data and winner information
+
+<CodeGroup>
+```python Basic Usage
+from forge import run_forge
+
+# Run forge with default settings (local execution)
+result = run_forge(
+    objective="Generate weekly AI events for Discord"
+)
+
+print(f"Winner: {result.winner_id}")
+print(f"Score: {result.winner_score}")
+print(f"Total candidates: {len(result.candidates)}")
+```
+
+```python With Daytona
+from forge import run_forge
+import os
+
+# Ensure Daytona is configured
+os.environ['DAYTONA_API_KEY'] = 'your-api-key'
+
+# Run in Daytona sandboxes
+result = run_forge(
+    objective="Generate weekly AI events for Discord",
+    use_daytona=True
+)
+
+print(f"Execution mode: {result.execution_mode}")
+```
+
+```python With Log Callback
+from forge import run_forge
+
+def log_handler(candidate_id: str, message: str):
+    print(f"[{candidate_id}] {message}")
+
+result = run_forge(
+    objective="Generate weekly AI events for Discord",
+    log_callback=log_handler
+)
+```
+</CodeGroup>
+
+---
+
+## Data Classes
+
+### ForgeResult
+
+Complete result of a forge run containing all execution data, scores, and winner information.
+
+<ResponseField name="objective" type="str">
+  The objective that was executed
+</ResponseField>
+
+<ResponseField name="timestamp" type="str">
+  ISO timestamp when the forge run completed (e.g., `"2026-01-28T14:30:00.123456"`)
+</ResponseField>
+
+<ResponseField name="execution_mode" type="str">
+  Execution mode used: `"local"` or `"daytona"`
+</ResponseField>
+
+<ResponseField name="candidates" type="list">
+  List of all candidate information including their artifacts. Each candidate contains:
+  - `id`: Candidate identifier
+  - `name`: Human-readable name
+  - `description`: Description of approach
+  - `script`: Path to implementation script
+  - `artifact`: Generated output content (if any)
+</ResponseField>
+
+<ResponseField name="scores" type="list">
+  List of score dictionaries for each candidate containing:
+  - `candidate_id`: Identifier
+  - `success`: Boolean indicating if execution succeeded
+  - `quality_score`: Quality score (0-100)
+  - `speed_score`: Speed score (0-100)
+  - `total_score`: Weighted total score
+  - `quality_details`: Detailed quality validation results
+</ResponseField>
+
+<ResponseField name="winner_id" type="str">
+  ID of the winning candidate (highest total score)
+</ResponseField>
+
+<ResponseField name="winner_score" type="float">
+  Total score of the winner
+</ResponseField>
+
+<ResponseField name="winner_artifact" type="str | None">
+  The artifact content produced by the winner, or `None` if no artifact was generated
+</ResponseField>
+
+<ResponseField name="artifacts_dir" type="str" default="artifacts">
+  Directory path where all artifacts are stored
+</ResponseField>
+
+<CodeGroup>
+```python Accessing Results
+from forge import run_forge
+
+result = run_forge(objective="Generate weekly AI events for Discord")
+
+# Access winner information
+print(f"Winner: {result.winner_id}")
+print(f"Score: {result.winner_score}")
+
+# Access winner's artifact
+if result.winner_artifact:
+    print("\nWinner's Output:")
+    print(result.winner_artifact)
+
+# Access all scores
+for score in result.scores:
+    print(f"{score['candidate_id']}: {score['total_score']}")
+```
+
+```python Detailed Score Analysis
+from forge import run_forge
+
+result = run_forge(objective="Generate weekly AI events for Discord")
+
+# Analyze quality details
+for score in result.scores:
+    print(f"\n{score['candidate_id']}:")
+    print(f"  Success: {score['success']}")
+    print(f"  Quality: {score['quality_score']}/100")
+    print(f"  Speed: {score['speed_score']}/100")
+    print(f"  Total: {score['total_score']}/100")
+    
+    if 'quality_details' in score:
+        details = score['quality_details']
+        print(f"  Valid Events: {details['valid_events']}/{details['total_events']}")
+        print(f"  Hackathon Event: {'Yes' if details['has_daytona_event'] else 'No'}")
+```
+</CodeGroup>
+
+---
+
+## Constants
+
+### CANDIDATES
+
+List of all available candidate implementations. Each candidate has a unique approach and tradeoffs.
+
+```python
+CANDIDATES = [
+    {
+        "id": "alpha",
+        "name": "Agent Alpha",
+        "description": "The Speed Demon - Fast scraper, may miss JS content",
+        "script": "candidates/agent_alpha.py",
+    },
+    {
+        "id": "beta",
+        "name": "Agent Beta",
+        "description": "The Perfectionist - Thorough but slow",
+        "script": "candidates/agent_beta.py",
+    },
+    {
+        "id": "gamma",
+        "name": "Agent Gamma",
+        "description": "The Insider - API-based, reliable",
+        "script": "candidates/agent_gamma.py",
+    },
+    {
+        "id": "delta",
+        "name": "Agent Delta",
+        "description": "The Crasher - Unstable, crashes frequently",
+        "script": "candidates/agent_delta.py",
+    },
+    {
+        "id": "epsilon",
+        "name": "Agent Epsilon",
+        "description": "The Hallucinator - Fast but unreliable data",
+        "script": "candidates/agent_epsilon.py",
+    },
+]
+```
+
+---
+
+## Helper Functions
+
+### run_candidate_local()
+
+Runs a single candidate locally via subprocess. This is an internal function used by `run_forge()`.
+
+<ParamField path="candidate" type="dict" required>
+  Candidate dictionary from CANDIDATES list
+</ParamField>
+
+<ParamField path="objective" type="str" required>
+  The objective to execute
+</ParamField>
+
+<ParamField path="artifacts_dir" type="Path" required>
+  Directory to store output artifacts
+</ParamField>
+
+<ParamField path="log_callback" type="Callable[[str, str], None]" optional>
+  Optional logging callback
+</ParamField>
+
+**Returns:** Tuple of `(produced_output, error_occurred, runtime_seconds, artifact_content, error_message)`
+
+<Note>
+  This function has a 60-second timeout per candidate. If execution exceeds this, a timeout error is returned.
+</Note>
+
+---
+
+## Scoring Weights
+
+The forge uses weighted scoring across three criteria:
+
+- **Success (20%)**: Did the candidate produce output without errors?
+- **Quality (60%)**: Does the output meet requirements?
+  - 10+ events (2 per day Mon-Fri)
+  - Daytona AI Hackathon must be included
+  - Valid URLs (lu.ma, meetup, eventbrite)
+  - AI-related content
+  - Correct event types (hackathon, meetup, conference)
+- **Speed (20%)**: Execution time (faster = better, max 30 seconds)
+
+**Total Score Formula:**
+```
+total_score = (success_score × 0.2) + (quality_score × 0.6) + (speed_score × 0.2)
+```
+
+If a candidate fails (doesn't produce output), the total score is 0 regardless of other metrics.
+
+---
+
+## Artifacts
+
+The forge produces several artifacts in the `artifacts/` directory:
+
+```
+artifacts/
+├── alpha/
+│   └── discord_post.md    # Agent Alpha's output
+├── beta/
+│   └── discord_post.md    # Agent Beta's output
+├── gamma/
+│   └── discord_post.md    # Agent Gamma's output
+├── delta/
+│   └── discord_post.md    # Agent Delta's output
+├── epsilon/
+│   └── discord_post.md    # Agent Epsilon's output
+├── scores.json            # Complete scoring data
+└── winner.txt             # Winner's candidate ID
+```
+
+### scores.json Structure
+
+```json
+{
+  "objective": "Generate weekly AI events for Discord",
+  "timestamp": "2026-01-28T14:30:00.123456",
+  "execution_mode": "local",
+  "candidates": [
+    {
+      "candidate_id": "alpha",
+      "success": true,
+      "quality_score": 85.0,
+      "speed_score": 95.0,
+      "total_score": 88.0,
+      "quality_details": {
+        "passed": true,
+        "total_events": 14,
+        "valid_events": 12,
+        "has_daytona_event": true,
+        "details": "All 12 events passed strict validation!"
+      }
+    }
+  ],
+  "winner": "gamma",
+  "winner_score": 92.5
+}
+```
+
+---
+
+## Error Handling
+
+The forge captures and reports errors comprehensively:
+
+- **Subprocess errors**: Captured via stderr, limited to 500 characters
+- **Timeouts**: 60-second limit per candidate
+- **Sentry integration**: Errors automatically sent to Sentry (if configured)
+- **Missing output**: Detected and scored as failure
+
+<CodeGroup>
+```python Error Handling Example
+from forge import run_forge
+
+result = run_forge(objective="Generate weekly AI events for Discord")
+
+# Check for failures
+for score in result.scores:
+    if not score['success']:
+        print(f"{score['candidate_id']} failed:")
+        if score.get('error_message'):
+            print(f"  Error: {score['error_message']}")
+```
+</CodeGroup>
+
+---
+
+## Integration with Sentry
+
+Optional Sentry integration for error monitoring:
+
+1. Set `SENTRY_DSN` environment variable
+2. Install `sentry-sdk`: `pip install sentry-sdk`
+3. Errors are automatically captured during execution
+
+```python
+import os
+os.environ['SENTRY_DSN'] = 'https://your-dsn@sentry.io/project'
+
+from forge import run_forge
+
+# Errors will be sent to Sentry
+result = run_forge(objective="Generate weekly AI events for Discord")
+```
+
+<Note>
+  Sentry is completely optional. The forge works without it, but provides enhanced error tracking when configured.
+</Note>
+
+---
+
+## CLI Usage
+
+The forge can also be run from the command line:
+
+```bash
+# Basic usage
+python forge.py "Generate weekly AI events for Discord"
+
+# With flag syntax
+python forge.py --objective "Weekly SF AI events"
+
+# Run in Daytona sandboxes
+python forge.py --daytona "Generate weekly AI events for Discord"
+
+# Short flag
+python forge.py -d -o "Weekly SF AI events"
+```
+
+Default objective is used if none provided:
+```bash
+python forge.py
+# Uses: "Generate weekly 'AI Events in San Francisco' post for Discord"
+```

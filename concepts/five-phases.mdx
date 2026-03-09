@@ -1,0 +1,388 @@
+---
+title: 'The Five Phases'
+description: 'Deep dive into each phase of the Dream Foundry pipeline'
+---
+
+## Overview
+
+Dream Foundry transforms founder ideas into production code through five sequential phases. Each phase has specific responsibilities and outputs that feed into the next.
+
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│    THE      │  │    THE      │  │    THE      │  │    THE      │  │    THE      │
+│ DREAMCATCHER│─▶│DREAM FACTORY│─▶│ DREAM ARENA │─▶│DREAM PODIUM │─▶│  DREAM      │
+│             │  │             │  │             │  │             │  │ AWAKENING   │
+│ Innovative  │  │ AI Agent    │  │ Build, Run  │  │ Polished by │  │ Feature     │
+│ Ideas,      │  │ Candidates, │  │ & Measure,  │  │ CodeRabbit, │  │ Presentation│
+│ Objectives  │  │ Targets Set │  │ Top Three   │  │ Internal    │  │ Release to  │
+│ & Constraints│ │ with Bias   │  │ Chosen      │  │ Testing     │  │ the World   │
+└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+```
+
+## Phase 1: The Dreamcatcher
+
+**Goal:** Transform raw founder vision into structured requirements
+
+### What Happens
+
+<Steps>
+  <Step title="Idea Capture">
+    Founder inputs their raw idea, e.g., "I want a bot that posts AI events to our Discord every week"
+  </Step>
+  
+  <Step title="Context Extraction">
+    System captures:
+    - **Context**: Where the idea came from (CES, customer request, competitive pressure)
+    - **Aspirations**: What success looks like
+    - **Constraints**: Budget, timeline, tech stack limitations
+  </Step>
+  
+  <Step title="Brief Generation">
+    Creates a structured IdeaBrief that serves as the foundation for all subsequent phases
+  </Step>
+</Steps>
+
+### Output
+
+An `IdeaBrief` object containing:
+- Structured description
+- Success criteria
+- Hard constraints (time, budget, tech)
+- Business context
+
+<Note>
+The Dreamcatcher phase is about **clarity, not implementation**. It forces founders to articulate what they actually want before any code is written.
+</Note>
+
+---
+
+## Phase 2: The Dream Factory
+
+**Goal:** Generate multiple competing implementation approaches
+
+### What Happens
+
+<Steps>
+  <Step title="Candidate Generation">
+    AI generates N different implementation approaches, each with distinct trade-offs
+  </Step>
+  
+  <Step title="Objective Setting">
+    For each candidate, define measurable objectives with bias weights:
+    - **H (High)**: 3x multiplier - Critical requirements
+    - **M (Medium)**: 2x multiplier - Important but not critical
+    - **L (Low)**: 1x multiplier - Nice to have
+  </Step>
+  
+  <Step title="Scaffold Creation">
+    Generate starter code for each candidate approach
+  </Step>
+</Steps>
+
+### Demo Agents
+
+The hackathon demo includes 5 pre-built agents showcasing different strategies:
+
+<CardGroup cols={2}>
+  <Card title="Agent Alpha" icon="bolt">
+    **The Speed Demon**
+    
+    Lightning fast scraper that prioritizes speed over completeness. Skips weekend events and only checks top sources.
+    
+    **Trade-off**: Fast execution, but may miss important events
+  </Card>
+
+  <Card title="Agent Beta" icon="magnifying-glass">
+    **The Perfectionist**
+    
+    Thorough scraper that verifies every URL with full HTTP requests. Includes comprehensive event coverage.
+    
+    **Trade-off**: Slower execution, but higher quality output
+  </Card>
+
+  <Card title="Agent Gamma" icon="link">
+    **The Insider**
+    
+    Uses curated data from Cerebral Valley and verified lu.ma sources. Reliable connections, fast execution.
+    
+    **Trade-off**: Limited to known sources, but highly reliable
+  </Card>
+
+  <Card title="Agent Delta" icon="circle-exclamation">
+    **The Crasher**
+    
+    Intentionally crashes with divide-by-zero error to demonstrate Sentry error capture.
+    
+    **Purpose**: Shows how the system handles failures gracefully
+  </Card>
+
+  <Card title="Agent Epsilon" icon="ghost">
+    **The Hallucinator**
+    
+    Produces intentionally bad data (wrong dates, wrong locations, fake events) to demonstrate quality scoring.
+    
+    **Purpose**: Validates that the scoring system catches low-quality output
+  </Card>
+</CardGroup>
+
+### Output
+
+A list of `Candidate` objects, each containing:
+- Implementation approach description
+- Tech stack selection
+- Complexity estimate
+- Starter code scaffold
+- Measurable objectives with weights
+
+---
+
+## Phase 3: The Dream Arena
+
+**Goal:** Build, run, and measure all candidates to find the top 3
+
+### What Happens
+
+<Steps>
+  <Step title="Daytona Sandbox Creation">
+    Each candidate gets an isolated Daytona workspace
+    
+    ```python
+    # From forge.py:242
+    daytona_results = run_all_candidates_in_daytona(
+        CANDIDATES, objective, artifacts_dir, log_callback
+    )
+    ```
+  </Step>
+  
+  <Step title="Sentry Monitoring">
+    Sentry captures errors and performance metrics during execution
+    
+    ```python
+    # From forge.py:176
+    sentry_sdk.capture_message(
+        f"Candidate {candidate_id} failed: {error_message[:200]}",
+        level="error"
+    )
+    ```
+  </Step>
+  
+  <Step title="Execution">
+    Each candidate runs with:
+    - 60-second timeout
+    - Error capture
+    - Performance tracking
+    - Artifact generation
+  </Step>
+  
+  <Step title="Scoring">
+    Candidates scored on three criteria:
+    - **Success (20%)**: Did it produce output without errors?
+    - **Quality (60%)**: Does output meet requirements?
+    - **Speed (20%)**: How fast did it execute?
+  </Step>
+  
+  <Step title="Top 3 Selection">
+    Highest-scoring candidates advance to the Podium
+  </Step>
+</Steps>
+
+### Key Demo Moment
+
+Sentry captures Agent Delta's crash in real-time, demonstrating error monitoring:
+
+```python
+# From agent_delta.py:23
+events_found = 0
+average = 100 / events_found  # BOOM! DivisionError
+```
+
+### Output
+
+- `scores.json`: Complete scoring breakdown for all candidates
+- `winner.txt`: ID of the winning candidate
+- Artifacts for each candidate (Discord posts, logs)
+- Sentry error reports
+
+---
+
+## Phase 4: The Dream Podium
+
+**Goal:** Polish the top 3 candidates and select the final winner
+
+### What Happens
+
+<Steps>
+  <Step title="CodeRabbit Review">
+    Top 3 candidates submitted to CodeRabbit for AI-powered code review
+  </Step>
+  
+  <Step title="Code Improvements">
+    CodeRabbit suggests and applies:
+    - Bug fixes
+    - Performance optimizations
+    - Code quality improvements
+    - Best practices enforcement
+  </Step>
+  
+  <Step title="Re-testing">
+    All polished candidates re-run through the same test suite
+  </Step>
+  
+  <Step title="Before/After Comparison">
+    System shows improvement deltas:
+    - Score changes
+    - Error reduction
+    - Performance gains
+  </Step>
+  
+  <Step title="Winner Selection">
+    Highest-scoring polished candidate wins
+  </Step>
+  
+  <Step title="PR Publication">
+    Winner's code published as a pull request
+  </Step>
+</Steps>
+
+### Key Demo Moment
+
+Agent Alpha jumps from 3rd to 2nd place after CodeRabbit adds weekend event coverage, demonstrating measurable improvement.
+
+### Output
+
+- Polished code for top 3 candidates
+- Before/after diffs
+- Updated scores
+- Winner's pull request
+
+---
+
+## Phase 5: The Dream Awakening
+
+**Goal:** Present the feature to the world
+
+### What Happens
+
+<Steps>
+  <Step title="Documentation Generation">
+    Generate three types of docs:
+    - **Engineering**: Technical implementation details
+    - **Marketing**: Feature benefits and positioning
+    - **Executive**: Business impact and ROI
+  </Step>
+  
+  <Step title="Voice Narration">
+    ElevenLabs generates audio presentations for each audience
+    
+    ```yaml
+    # From config.yaml
+    showcase:
+      voice_model: "eleven_multilingual_v2"
+      output_formats: ["mp3"]
+    ```
+  </Step>
+  
+  <Step title="Release Package">
+    Bundle everything:
+    - Production code
+    - Documentation
+    - Audio presentations
+    - Demo videos
+  </Step>
+  
+  <Step title="Launch">
+    Feature goes live:
+    - Discord announcement
+    - Team notification
+    - Stakeholder updates
+  </Step>
+</Steps>
+
+### Key Demo Moment
+
+ElevenLabs narration summarizes the entire journey and announces Agent Gamma as the winner.
+
+### Output
+
+- Complete feature documentation
+- MP3 audio presentations
+- Marketing materials
+- Launch announcement
+- Production deployment
+
+---
+
+## Sponsor Integration Map
+
+How each sponsor tool integrates across phases:
+
+| Phase | Daytona | Sentry | CodeRabbit | ElevenLabs |
+|-------|---------|--------|------------|------------|
+| Dreamcatcher | | | | |
+| Dream Factory | | | | |
+| **Dream Arena** | ⭐ Sandboxes | ⭐ Monitoring | | |
+| **Dream Podium** | | | ⭐ Polish + PR | |
+| **Dream Awakening** | | | | ⭐ Presentation |
+
+---
+
+## Complete Journey Example
+
+**Founder's Request**: "I want a bot that posts AI events to our Discord every week."
+
+<Accordion title="Phase 1: Dreamcatcher">
+  Captures requirement:
+  - **Goal**: Weekly AI events in SF for Discord
+  - **Success**: 10+ events, includes Daytona hackathon, valid URLs
+  - **Constraints**: Must run in under 30 seconds
+</Accordion>
+
+<Accordion title="Phase 2: Dream Factory">
+  Generates 5 agents:
+  - Alpha: Fast scraper (weekday events only)
+  - Beta: Thorough scraper (all events, slower)
+  - Gamma: Curated sources (verified lu.ma data)
+  - Delta: Intentional crasher (Sentry demo)
+  - Epsilon: Bad data generator (quality demo)
+</Accordion>
+
+<Accordion title="Phase 3: Dream Arena">
+  All 5 compete:
+  - Delta crashes immediately (Sentry captures)
+  - Epsilon produces bad data (quality score: 12/100)
+  - Alpha is fast but misses hackathon (quality: 45/100)
+  - Beta finds all events but slow (quality: 88/100)
+  - Gamma wins: fast + comprehensive (quality: 92/100)
+</Accordion>
+
+<Accordion title="Phase 4: Dream Podium">
+  CodeRabbit polishes top 3:
+  - Alpha gets weekend event fallback → jumps to 72/100
+  - Beta gets performance optimizations → stays at 91/100
+  - Gamma gets minor cleanups → stays at 94/100
+  
+  **Winner**: Agent Gamma (94/100 total score)
+</Accordion>
+
+<Accordion title="Phase 5: Dream Awakening">
+  ElevenLabs presents:
+  - Engineering doc: Implementation details
+  - Marketing pitch: "Never miss an AI event in SF"
+  - Executive summary: "Automated community engagement"
+  
+  Feature ships to production ✅
+</Accordion>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Scoring System" href="/concepts/scoring-system" icon="star">
+    Learn how the Success/Quality/Speed scoring works
+  </Card>
+  
+  <Card title="Agent Strategies" href="/concepts/agent-strategies" icon="robot">
+    Deep dive into each agent's implementation approach
+  </Card>
+</CardGroup>

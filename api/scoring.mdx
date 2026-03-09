@@ -1,0 +1,634 @@
+---
+title: "Scoring Module"
+description: "Scoring system that evaluates candidates on Success, Quality, and Speed with strict validation criteria"
+---
+
+## Overview
+
+The Scoring module implements Dream Foundry's three-criteria evaluation system:
+
+1. **Success** - Did it produce valid output without errors?
+2. **Quality** - Does the output meet strict content requirements?
+3. **Speed** - How fast did it execute?
+
+Scores are weighted (Success 20%, Quality 60%, Speed 20%) to produce a final total score.
+
+---
+
+## Core Function
+
+### score_candidate()
+
+Scores a candidate across all three criteria and returns a comprehensive result.
+
+<ParamField path="candidate_id" type="str" required>
+  Unique identifier for the candidate being scored
+</ParamField>
+
+<ParamField path="produced_output" type="bool" required>
+  Whether the candidate produced any output file
+</ParamField>
+
+<ParamField path="error_occurred" type="bool" required>
+  Whether any errors occurred during execution
+</ParamField>
+
+<ParamField path="artifact_content" type="str | None" required>
+  The content of the artifact produced by the candidate. Can be `None` if no output was generated.
+</ParamField>
+
+<ParamField path="runtime_seconds" type="float" required>
+  Execution time in seconds
+</ParamField>
+
+<ParamField path="error_message" type="str | None" optional>
+  Optional error message if execution failed
+</ParamField>
+
+**Returns:** `ScoreResult` - Complete scoring breakdown with success, quality, and speed metrics
+
+<CodeGroup>
+```python Basic Usage
+from src.scoring import score_candidate
+
+# Score a successful candidate
+result = score_candidate(
+    candidate_id="alpha",
+    produced_output=True,
+    error_occurred=False,
+    artifact_content="**Event 1**\nDate: January 24, 2026...",
+    runtime_seconds=5.2
+)
+
+print(f"Total Score: {result.total_score}")
+print(f"Quality: {result.quality_score}")
+print(f"Speed: {result.speed_score}")
+```
+
+```python Failed Candidate
+from src.scoring import score_candidate
+
+# Score a failed candidate
+result = score_candidate(
+    candidate_id="delta",
+    produced_output=False,
+    error_occurred=True,
+    artifact_content=None,
+    runtime_seconds=2.1,
+    error_message="ImportError: No module named 'requests'"
+)
+
+print(f"Success: {result.success}")  # False
+print(f"Total Score: {result.total_score}")  # 0.0
+```
+</CodeGroup>
+
+---
+
+## Data Classes
+
+### ScoreResult
+
+Complete scoring result for a candidate.
+
+<ResponseField name="candidate_id" type="str">
+  Identifier of the scored candidate
+</ResponseField>
+
+<ResponseField name="success" type="bool">
+  Overall success status (produced output AND no errors)
+</ResponseField>
+
+<ResponseField name="produced_output" type="bool">
+  Whether the candidate produced any output
+</ResponseField>
+
+<ResponseField name="error_occurred" type="bool">
+  Whether any errors occurred during execution
+</ResponseField>
+
+<ResponseField name="error_message" type="str | None">
+  Error message if execution failed
+</ResponseField>
+
+<ResponseField name="quality" type="QualityResult | None">
+  Detailed quality validation results. `None` if no artifact was produced.
+</ResponseField>
+
+<ResponseField name="quality_score" type="float">
+  Quality score from 0-100
+</ResponseField>
+
+<ResponseField name="runtime_seconds" type="float">
+  Execution time in seconds
+</ResponseField>
+
+<ResponseField name="speed_score" type="float">
+  Speed score from 0-100 (faster = higher)
+</ResponseField>
+
+<ResponseField name="total_score" type="float">
+  Weighted total score combining all criteria
+</ResponseField>
+
+### QualityResult
+
+Detailed quality validation result.
+
+<ResponseField name="passed" type="bool">
+  Whether the output passed all quality checks
+</ResponseField>
+
+<ResponseField name="total_events" type="int">
+  Total number of events found in the output
+</ResponseField>
+
+<ResponseField name="valid_events" type="int">
+  Number of events that passed all validation criteria
+</ResponseField>
+
+<ResponseField name="has_daytona_event" type="bool">
+  Whether a hackathon event was found (required)
+</ResponseField>
+
+<ResponseField name="invalid_date_events" type="list">
+  List of events with dates outside January 24-31, 2026
+</ResponseField>
+
+<ResponseField name="invalid_location_events" type="list">
+  List of events outside SF/San Jose/Palo Alto/Mountain View
+</ResponseField>
+
+<ResponseField name="non_ai_events" type="list">
+  List of events not AI-related
+</ResponseField>
+
+<ResponseField name="invalid_urls" type="list">
+  List of events with invalid or missing URLs
+</ResponseField>
+
+<ResponseField name="score" type="float">
+  Quality score from 0-100
+</ResponseField>
+
+<ResponseField name="details" type="str">
+  Human-readable summary of quality issues
+</ResponseField>
+
+<CodeGroup>
+```python Accessing Quality Details
+from src.scoring import score_candidate
+
+result = score_candidate(
+    candidate_id="beta",
+    produced_output=True,
+    error_occurred=False,
+    artifact_content=markdown_content,
+    runtime_seconds=12.4
+)
+
+if result.quality:
+    q = result.quality
+    print(f"Events: {q.valid_events}/{q.total_events} valid")
+    print(f"Hackathon event: {'Yes' if q.has_daytona_event else 'No'}")
+    print(f"Quality passed: {q.passed}")
+    
+    if not q.passed:
+        print(f"Issues: {q.details}")
+```
+</CodeGroup>
+
+---
+
+## Quality Validation
+
+### validate_quality()
+
+Validates markdown content against strict quality criteria.
+
+<ParamField path="markdown_content" type="str" required>
+  The markdown content to validate (typically a Discord post with AI events)
+</ParamField>
+
+**Returns:** `QualityResult` with detailed validation breakdown
+
+### Strict Quality Criteria
+
+All events must meet these requirements:
+
+<Note>
+  **DATE**: Must be January 24-31, 2026 ONLY
+  
+  **LOCATION**: Must be San Francisco, San Jose, Palo Alto, or Mountain View ONLY
+  
+  **AI RELATED**: Must contain AI/ML keywords
+  
+  **VALID URL**: Must be from known event platforms (lu.ma, meetup.com, etc.)
+  
+  **HACKATHON**: At least one hackathon event MUST be included
+</Note>
+
+### Valid Date Range
+
+```python
+VALID_DATE_START = datetime(2026, 1, 24)
+VALID_DATE_END = datetime(2026, 1, 31)
+```
+
+Supported date formats:
+- `"Saturday, January 24, 2026"`
+- `"January 24, 2026"`
+- `"2026-01-24"`
+- `"01/24/2026"`
+
+### Valid Locations
+
+```python
+VALID_LOCATIONS = [
+    "san francisco",
+    "san jose",
+    "palo alto",
+    "mountain view",
+]
+```
+
+Location matching is case-insensitive and partial match.
+
+### Valid URL Patterns
+
+```python
+VALID_URL_PATTERNS = [
+    r'https?://(www\.)?lu\.ma/',
+    r'https?://(www\.)?luma\.com/',
+    r'https?://(www\.)?meetup\.com/',
+    r'https?://(www\.)?eventbrite\.(com|co\.uk)/',
+    r'https?://(www\.)?partiful\.com/',
+    r'https?://(www\.)?supermomos\.com/',
+    r'https?://(www\.)?humanx\.co/',
+    r'https?://(compute\.)?daytona\.io/',
+    r'https?://(www\.)?sensaihack\.com/',
+]
+```
+
+### AI Keywords
+
+Events must contain at least one of these keywords (case-insensitive):
+
+```python
+AI_KEYWORDS = [
+    'ai', 'artificial intelligence', 'machine learning', 'ml', 'llm',
+    'gpt', 'claude', 'langchain', 'rag', 'neural', 'deep learning',
+    'nlp', 'natural language', 'computer vision', 'generative', 'transformer',
+    'agent', 'agents', 'anthropic', 'openai', 'hugging face', 'pytorch',
+    'tensorflow', 'data science', 'mlops', 'embedding', 'vector',
+    'genai', 'diffusion', 'nvidia', 'google ai', 'stanford ai',
+    'agi', 'humanx', 'daytona', 'compute', 'hackathon', 'tinkerers',
+    'makerspace', 'founders', 'tech talk', 'deep dive', 'builders',
+]
+```
+
+---
+
+## Quality Scoring Formula
+
+Quality score (0-100) is calculated as:
+
+```python
+score = 0.0
+
+# Valid events: up to 40 points
+score += (valid_events / total_events) * 40
+
+# Hackathon event: 25 points
+if has_hackathon_event:
+    score += 25
+
+# Event count bonus: up to 20 points (14+ events = 20 points)
+score += min(20, (valid_events / 14) * 20)
+
+# No invalid events bonus: 15 points
+if no_invalid_events:
+    score += 15
+```
+
+### Passing Criteria
+
+To pass quality validation, ALL of these must be true:
+- At least 6 valid events
+- Hackathon event included
+- No invalid date events
+- No invalid location events
+
+<CodeGroup>
+```python Quality Scoring Example
+from src.scoring import validate_quality
+
+markdown = """
+**Daytona AI Hackathon**
+Date: January 24, 2026
+Location: San Francisco
+Type: Hackathon
+[RSVP](https://compute.daytona.io/hackathon)
+
+**AI Tinkerers Meetup**
+Date: January 27, 2026
+Location: Palo Alto
+Type: Meetup
+[RSVP](https://lu.ma/ai-tinkerers)
+"""
+
+result = validate_quality(markdown)
+
+print(f"Score: {result.score}/100")
+print(f"Passed: {result.passed}")
+print(f"Valid Events: {result.valid_events}/{result.total_events}")
+print(f"Hackathon: {result.has_daytona_event}")
+```
+</CodeGroup>
+
+---
+
+## Speed Scoring
+
+### calculate_speed_score()
+
+Calculates speed score based on execution time.
+
+<ParamField path="runtime_seconds" type="float" required>
+  Execution time in seconds
+</ParamField>
+
+<ParamField path="max_time" type="float" default="30.0">
+  Maximum time threshold (scores 0 beyond this)
+</ParamField>
+
+**Returns:** `float` - Speed score from 0-100
+
+### Speed Formula
+
+```python
+if runtime_seconds <= 0:
+    return 100.0
+if runtime_seconds >= max_time:
+    return 0.0
+return 100 * (1 - runtime_seconds / max_time)
+```
+
+**Examples:**
+- 0 seconds → 100.0
+- 5 seconds → 83.3
+- 15 seconds → 50.0
+- 30 seconds → 0.0
+- 45 seconds → 0.0
+
+---
+
+## Total Score Calculation
+
+### calculate_total_score()
+
+Calculates weighted total score from all criteria.
+
+<ParamField path="success" type="bool" required>
+  Whether execution succeeded
+</ParamField>
+
+<ParamField path="quality_score" type="float" required>
+  Quality score (0-100)
+</ParamField>
+
+<ParamField path="speed_score" type="float" required>
+  Speed score (0-100)
+</ParamField>
+
+<ParamField path="weights" type="dict" optional>
+  Custom weights dictionary. Defaults to:
+  ```python
+  {'success': 0.2, 'quality': 0.6, 'speed': 0.2}
+  ```
+</ParamField>
+
+**Returns:** `float` - Total score from 0-100
+
+### Default Weights
+
+- **Success**: 20%
+- **Quality**: 60%
+- **Speed**: 20%
+
+### Formula
+
+```python
+if not success:
+    return 0.0
+
+total = (
+    100.0 * weights['success'] +      # Success is binary: 0 or 100
+    quality_score * weights['quality'] +
+    speed_score * weights['speed']
+)
+```
+
+<CodeGroup>
+```python Default Weights
+from src.scoring import calculate_total_score
+
+score = calculate_total_score(
+    success=True,
+    quality_score=85.0,
+    speed_score=75.0
+)
+# Result: 20.0 + 51.0 + 15.0 = 86.0
+```
+
+```python Custom Weights
+from src.scoring import calculate_total_score
+
+# Emphasize quality even more
+custom_weights = {
+    'success': 0.1,
+    'quality': 0.8,
+    'speed': 0.1
+}
+
+score = calculate_total_score(
+    success=True,
+    quality_score=90.0,
+    speed_score=60.0,
+    weights=custom_weights
+)
+# Result: 10.0 + 72.0 + 6.0 = 88.0
+```
+</CodeGroup>
+
+---
+
+## Helper Functions
+
+### parse_events_from_markdown()
+
+Parses event data from Discord markdown format.
+
+<ParamField path="markdown" type="str" required>
+  Markdown content containing event listings
+</ParamField>
+
+**Returns:** `list[dict]` - List of event dictionaries
+
+Each event dictionary contains:
+- `title`: Event title
+- `date`: Date string
+- `time`: Time string (if present)
+- `location`: Location string
+- `event_type`: Event type (hackathon, meetup, etc.)
+- `url`: Event URL
+
+<CodeGroup>
+```python Parse Events
+from src.scoring import parse_events_from_markdown
+
+markdown = """
+**Daytona AI Hackathon**
+Date: January 24, 2026
+Time: 9:00 AM - 6:00 PM
+Location: San Francisco
+Type: Hackathon
+[RSVP](https://compute.daytona.io/hackathon)
+"""
+
+events = parse_events_from_markdown(markdown)
+print(events[0])
+# {
+#   'title': 'Daytona AI Hackathon',
+#   'date': 'January 24, 2026',
+#   'time': '9:00 AM - 6:00 PM',
+#   'location': 'San Francisco',
+#   'event_type': 'Hackathon',
+#   'url': 'https://compute.daytona.io/hackathon'
+# }
+```
+</CodeGroup>
+
+### Validation Helper Functions
+
+#### parse_date()
+
+Parses date from various formats.
+
+```python
+from src.scoring import parse_date
+from datetime import datetime
+
+date = parse_date("January 24, 2026")  # datetime(2026, 1, 24)
+```
+
+#### is_valid_date()
+
+Checks if date is within valid range (Jan 24-31, 2026).
+
+```python
+from src.scoring import is_valid_date
+
+is_valid_date("January 24, 2026")  # True
+is_valid_date("February 1, 2026")   # False
+```
+
+#### is_valid_location()
+
+Checks if location is in allowed cities.
+
+```python
+from src.scoring import is_valid_location
+
+is_valid_location("San Francisco")  # True
+is_valid_location("Los Angeles")    # False
+```
+
+#### is_valid_url()
+
+Checks if URL matches valid event platform patterns.
+
+```python
+from src.scoring import is_valid_url
+
+is_valid_url("https://lu.ma/ai-event")      # True
+is_valid_url("https://random-site.com")     # False
+```
+
+#### is_ai_related()
+
+Checks if title contains AI keywords.
+
+```python
+from src.scoring import is_ai_related
+
+is_ai_related("AI Tinkerers Meetup")  # True
+is_ai_related("Yoga Class")            # False
+```
+
+#### has_hackathon_event()
+
+Checks if any event in list is a hackathon.
+
+```python
+from src.scoring import has_hackathon_event
+
+events = [
+    {'title': 'AI Hackathon', 'event_type': 'Hackathon'},
+    {'title': 'AI Meetup', 'event_type': 'Meetup'}
+]
+
+has_hackathon_event(events)  # True
+```
+
+---
+
+## Complete Example
+
+<CodeGroup>
+```python Full Scoring Workflow
+from src.scoring import (
+    score_candidate,
+    validate_quality,
+    parse_events_from_markdown
+)
+
+# Sample markdown output from a candidate
+markdown_content = """
+**Daytona AI Hackathon**
+Date: January 24, 2026
+Location: San Francisco
+Type: Hackathon
+[RSVP](https://compute.daytona.io/hackathon)
+
+**AI Tinkerers Meetup**
+Date: January 27, 2026
+Location: Palo Alto
+Type: Meetup
+[RSVP](https://lu.ma/ai-tinkerers)
+"""
+
+# Score the candidate
+result = score_candidate(
+    candidate_id="gamma",
+    produced_output=True,
+    error_occurred=False,
+    artifact_content=markdown_content,
+    runtime_seconds=8.5
+)
+
+# Display results
+print(f"Candidate: {result.candidate_id}")
+print(f"Success: {result.success}")
+print(f"Quality Score: {result.quality_score}/100")
+print(f"Speed Score: {result.speed_score}/100")
+print(f"Total Score: {result.total_score}/100")
+
+if result.quality:
+    print(f"\nQuality Details:")
+    print(f"  Valid Events: {result.quality.valid_events}/{result.quality.total_events}")
+    print(f"  Hackathon: {result.quality.has_daytona_event}")
+    print(f"  Passed: {result.quality.passed}")
+    print(f"  Details: {result.quality.details}")
+```
+</CodeGroup>

@@ -1,0 +1,492 @@
+---
+title: 'ElevenLabs'
+description: 'Voice synthesis for winner announcements'
+icon: 'microphone'
+---
+
+The ElevenLabs integration generates professional voice narration for the Dream Awakening phase, creating audio announcements of the winning agent.
+
+## Overview
+
+The module handles:
+- Text-to-speech conversion using ElevenLabs API
+- Cloned voice support for personalized narration
+- Winner announcement script generation
+- Audio file management (MP3 format)
+- Voice configuration and quality settings
+
+<Note>
+  Requires an ElevenLabs API key. Sign up at [elevenlabs.io](https://elevenlabs.io) to get started.
+</Note>
+
+---
+
+## Configuration
+
+### Environment Variables
+
+<ParamField path="ELEVENLABS_API_KEY" type="string" required>
+  Your ElevenLabs API key for authentication
+</ParamField>
+
+<ParamField path="ELEVENLABS_CLONED_VOICE_ID" type="string">
+  Optional custom voice ID. Defaults to Rachel (ElevenLabs default voice) if not provided.
+</ParamField>
+
+### Configuration Functions
+
+<CodeGroup>
+```python get_elevenlabs_config()
+"""Get ElevenLabs API key and voice ID from environment.
+
+Returns:
+    tuple[Optional[str], Optional[str]]: (api_key, voice_id)
+"""
+```
+
+```python is_configured()
+"""Check if ElevenLabs is properly configured.
+
+Returns:
+    bool: True if API key is set
+"""
+```
+</CodeGroup>
+
+---
+
+## Core Functions
+
+### generate_audio
+
+Convert text to speech using ElevenLabs API.
+
+```python
+def generate_audio(
+    text: str,
+    output_path: Optional[str] = None,
+    voice_id: Optional[str] = None,
+) -> Optional[bytes]:
+```
+
+#### Parameters
+
+<ParamField path="text" type="string" required>
+  The text to convert to speech. Can be multi-line with natural pauses.
+</ParamField>
+
+<ParamField path="output_path" type="string">
+  Optional path to save the generated MP3 file. Parent directories are created automatically.
+</ParamField>
+
+<ParamField path="voice_id" type="string">
+  Optional voice ID to use. Overrides `ELEVENLABS_CLONED_VOICE_ID` env var.
+  
+  Defaults to Rachel (ID: `EXAVITQu4vr4xnSDxMaL`) if not provided.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="audio_bytes" type="bytes | None">
+  MP3 audio data as bytes if successful, `None` if API key not configured or request failed
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Basic Usage
+from src.elevenlabs import generate_audio
+
+audio = generate_audio(
+    text="The winner is Agent Gamma with 92.5 points.",
+    output_path="outputs/announcement.mp3",
+)
+
+if audio:
+    print(f"Generated {len(audio)} bytes of audio")
+else:
+    print("Failed to generate audio")
+```
+
+```python Custom Voice
+audio = generate_audio(
+    text="Welcome to the Dream Foundry!",
+    voice_id="21m00Tcm4TlvDq8ikWAM",  # Rachel's voice ID
+    output_path="outputs/intro.mp3",
+)
+```
+
+```python In-Memory Usage
+# Generate without saving to disk
+audio_bytes = generate_audio(
+    text="Processing complete.",
+)
+
+if audio_bytes:
+    # Stream or process in memory
+    import io
+    audio_file = io.BytesIO(audio_bytes)
+```
+</CodeGroup>
+
+---
+
+### generate_winner_script
+
+Generate a narration script for the winner announcement.
+
+```python
+def generate_winner_script(
+    winner_name: str,
+    winner_score: float,
+    objective: str,
+) -> str:
+```
+
+#### Parameters
+
+<ParamField path="winner_name" type="string" required>
+  The name of the winning agent (e.g., "Agent Gamma")
+</ParamField>
+
+<ParamField path="winner_score" type="float" required>
+  The final winning score (0-100)
+</ParamField>
+
+<ParamField path="objective" type="string" required>
+  The original objective from the Dreamcatcher phase
+</ParamField>
+
+#### Returns
+
+<ResponseField name="script" type="string">
+  Formatted narration script ready for text-to-speech conversion
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Script Generation
+from src.elevenlabs import generate_winner_script
+
+script = generate_winner_script(
+    winner_name="Agent Gamma",
+    winner_score=92.5,
+    objective="Build a Discord bot for weekly AI events",
+)
+
+print(script)
+# Output:
+# The winner is Agent Gamma with 92.5 points.
+# 
+# After competing in the arena, Agent Gamma emerged as the clear choice 
+# for the objective: Build a Discord bot for weekly AI events.
+# 
+# The winning code has been published and is ready for review. 
+# Another dream successfully forged.
+```
+</CodeGroup>
+
+---
+
+### generate_winner_audio
+
+Convenience function that generates script and audio in one call.
+
+```python
+def generate_winner_audio(
+    winner_name: str,
+    winner_score: float,
+    objective: str,
+    output_path: Optional[str] = None,
+) -> Optional[bytes]:
+```
+
+#### Parameters
+
+<ParamField path="winner_name" type="string" required>
+  The name of the winning agent
+</ParamField>
+
+<ParamField path="winner_score" type="float" required>
+  The final winning score (0-100)
+</ParamField>
+
+<ParamField path="objective" type="string" required>
+  The original objective
+</ParamField>
+
+<ParamField path="output_path" type="string">
+  Optional path to save the MP3 file
+</ParamField>
+
+#### Returns
+
+<ResponseField name="audio_bytes" type="bytes | None">
+  MP3 audio data if successful, `None` otherwise
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Complete Workflow
+from src.elevenlabs import generate_winner_audio
+
+audio = generate_winner_audio(
+    winner_name="Agent Beta",
+    winner_score=95.0,
+    objective="Weekly AI events for Discord",
+    output_path="outputs/winner_announcement.mp3",
+)
+
+if audio:
+    print("Winner announcement audio generated!")
+```
+
+```python Full Integration
+from src.daytona_runner import run_candidate_in_daytona
+from src.discord_poster import post_winner_announcement
+from src.elevenlabs import generate_winner_audio
+
+# Run winner
+result = run_candidate_in_daytona(
+    candidate_id="gamma",
+    script_path="candidates/agent_gamma.py",
+    objective="AI events bot",
+    output_file="/home/daytona/output.md",
+)
+
+if result.success:
+    # Post to Discord
+    post_winner_announcement(
+        winner_id="gamma",
+        winner_score=92.5,
+        artifact_content=result.artifact_content,
+        objective="AI events bot",
+    )
+    
+    # Generate audio announcement
+    generate_winner_audio(
+        winner_name="Agent Gamma (The Insider)",
+        winner_score=92.5,
+        objective="AI events bot",
+        output_path="outputs/gamma_wins.mp3",
+    )
+```
+</CodeGroup>
+
+---
+
+## Voice Configuration
+
+The module uses the following voice settings for optimal narration quality:
+
+<CodeGroup>
+```json Voice Settings
+{
+  "model_id": "eleven_monolingual_v1",
+  "voice_settings": {
+    "stability": 0.5,
+    "similarity_boost": 0.75
+  }
+}
+```
+</CodeGroup>
+
+### Voice Parameters
+
+<ParamField path="model_id" type="string" default="eleven_monolingual_v1">
+  The ElevenLabs model to use. `eleven_monolingual_v1` provides high-quality English narration.
+</ParamField>
+
+<ParamField path="stability" type="float" default="0.5">
+  Controls voice consistency (0.0-1.0). Higher = more consistent, lower = more expressive.
+</ParamField>
+
+<ParamField path="similarity_boost" type="float" default="0.75">
+  How closely to match the original voice (0.0-1.0). Higher = closer match to cloned voice.
+</ParamField>
+
+---
+
+## Available Voices
+
+### Default Voices
+
+<ResponseField name="Rachel" type="string">
+  **ID:** `EXAVITQu4vr4xnSDxMaL`
+  
+  Professional, clear female voice. Used as default if no custom voice is configured.
+</ResponseField>
+
+<ResponseField name="Josh" type="string">
+  **ID:** `TxGEqnHWrfWFTfGW9XjX`
+  
+  Deep, authoritative male voice.
+</ResponseField>
+
+<ResponseField name="Bella" type="string">
+  **ID:** `EXAVITQu4vr4xnSDxMaL`
+  
+  Soft, friendly female voice.
+</ResponseField>
+
+### Custom Voices
+
+To use a cloned voice:
+
+1. Visit [ElevenLabs Voice Lab](https://elevenlabs.io/voice-lab)
+2. Create or clone a voice
+3. Copy the Voice ID
+4. Add to `.env`:
+   ```bash
+   ELEVENLABS_CLONED_VOICE_ID=your_voice_id_here
+   ```
+
+---
+
+## Error Handling
+
+<CodeGroup>
+```python Configuration Errors
+if not api_key:
+    return None  # Silently return None if not configured
+```
+
+```python API Errors
+if response.status_code != 200:
+    print(f"[ElevenLabs] Error: {response.status_code} - {response.text[:200]}")
+    return None
+```
+
+```python Network Errors
+try:
+    response = requests.post(url, json=payload, timeout=30)
+except Exception as e:
+    print(f"[ElevenLabs] Exception: {e}")
+    return None
+```
+</CodeGroup>
+
+<Note>
+  The module uses graceful degradation - if ElevenLabs is not configured or fails, it returns `None` rather than raising exceptions.
+</Note>
+
+---
+
+## Audio Output
+
+### Format Specifications
+
+<ResponseField name="Format" type="string">
+  MP3 (MPEG Audio Layer 3)
+</ResponseField>
+
+<ResponseField name="Bitrate" type="string">
+  Variable (optimized by ElevenLabs)
+</ResponseField>
+
+<ResponseField name="Sample Rate" type="string">
+  44.1 kHz (CD quality)
+</ResponseField>
+
+<ResponseField name="Channels" type="string">
+  Mono
+</ResponseField>
+
+### File Management
+
+```python
+# Automatic directory creation
+generate_audio(
+    text="Hello",
+    output_path="deep/nested/path/audio.mp3"  # Creates all parent dirs
+)
+
+# File size estimation
+# ~1 KB per second of audio (varies by content)
+import os
+audio = generate_audio("Short text", "output.mp3")
+file_size = os.path.getsize("output.mp3")
+print(f"Size: {file_size / 1024:.1f} KB")
+```
+
+---
+
+## Best Practices
+
+<Note>
+  **Script Length**: Keep narration under 2 minutes for optimal listener engagement.
+</Note>
+
+<Note>
+  **Punctuation**: Use periods and commas to create natural pauses in the narration.
+</Note>
+
+<Note>
+  **Voice Selection**: Test different voices to find the best match for your brand tone.
+</Note>
+
+<Note>
+  **Error Handling**: Always check for `None` return values before using audio data.
+</Note>
+
+---
+
+## Usage Patterns
+
+<CodeGroup>
+```python Pattern: Generate and Save
+# Most common: generate and save to disk
+audio = generate_audio(
+    text=script,
+    output_path="announcement.mp3"
+)
+
+if audio:
+    # File is saved, audio bytes also available
+    pass
+```
+
+```python Pattern: Generate Only
+# Generate without saving (for streaming/processing)
+audio_bytes = generate_audio(text=script)
+
+if audio_bytes:
+    # Process in memory
+    upload_to_s3(audio_bytes)
+```
+
+```python Pattern: Script + Audio
+# Common workflow: generate script then audio
+script = generate_winner_script(
+    winner_name="Agent Alpha",
+    winner_score=88.0,
+    objective="Build feature X",
+)
+
+audio = generate_audio(
+    text=script,
+    output_path="winner.mp3",
+)
+```
+
+```python Pattern: One-Shot Winner
+# Simplest: use convenience function
+audio = generate_winner_audio(
+    winner_name="Agent Beta",
+    winner_score=95.0,
+    objective="Build feature Y",
+    output_path="beta_wins.mp3",
+)
+```
+</CodeGroup>
+
+---
+
+## Related Documentation
+
+- [Dream Awakening Phase](/concepts/five-phases)
+- [Discord Poster](/api/discord-poster)
+- [Running the Forge](/guides/running-forge)
+- [ElevenLabs API Documentation](https://elevenlabs.io/docs)

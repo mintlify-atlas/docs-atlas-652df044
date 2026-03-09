@@ -1,0 +1,226 @@
+---
+title: 'Agent Delta'
+description: 'The Crasher - Intentional failure for Sentry demonstration'
+icon: 'skull'
+---
+
+# Agent Delta: The Crasher
+
+**Nickname:** The Crasher  
+**Strategy:** Intentional runtime failure  
+**Purpose:** Demonstrate Sentry error monitoring
+
+## Overview
+
+Agent Delta is a demonstration agent that intentionally crashes with a divide-by-zero error. It exists solely to showcase how the Dream Foundry's **Sentry integration** captures runtime errors in the Dream Arena phase. This agent will never produce valid output and is guaranteed to fail.
+
+<Warning>
+  **This agent intentionally crashes!** It is designed to fail for demonstration purposes. Do not use in production.
+</Warning>
+
+## Strategy & Approach
+
+### Intentional Failure Pattern
+
+Agent Delta implements a classic divide-by-zero error:
+
+1. **Initialize counters** - Sets `events_found = 0`
+2. **Attempt calculation** - Tries to compute `100 / events_found`
+3. **Crash immediately** - `ZeroDivisionError` is raised
+4. **Sentry captures** - Error is logged to Sentry dashboard
+
+### Purpose in Dream Foundry
+
+This agent demonstrates:
+- **Runtime error monitoring** via Sentry
+- **Graceful failure handling** in the Dream Arena
+- **Scoring system behavior** when agents crash
+- **Reliability scoring** drops to zero for crashed agents
+
+## Implementation
+
+### Core Functions
+
+#### `fetch_events()`
+
+The function that deliberately crashes.
+
+```python
+def fetch_events():
+    """This will crash with divide by zero."""
+    print("[Delta] Starting event fetch...")
+    print("[Delta] Calculating event scores...")
+
+    events_found = 0
+
+    # INTENTIONAL CRASH - divide by zero!
+    print("[Delta] Computing average score...")
+    average = 100 / events_found  # BOOM! DivisionError
+
+    return []
+```
+
+<Note>
+  The crash occurs at `agent_delta.py:23` when attempting to divide by zero. This is caught by Sentry in the Dream Arena.
+</Note>
+
+#### `main()`
+
+The entry point that triggers the crash sequence.
+
+```python
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: agent_delta.py <objective> <output_file>", file=sys.stderr)
+        sys.exit(1)
+
+    objective = sys.argv[1]
+    output_file = Path(sys.argv[2])
+
+    print(f"[Delta] Objective: {objective}")
+    print("[Delta] Initializing crash sequence...")
+
+    # This will crash
+    events = fetch_events()
+
+    # Never reaches here
+    print(f"[Delta] Found {len(events)} events")
+```
+
+## Error Output
+
+When Agent Delta runs, it produces:
+
+```bash
+$ python agent_delta.py "Find AI events" output.md
+
+[Delta] Objective: Find AI events
+[Delta] Initializing crash sequence...
+[Delta] Starting event fetch...
+[Delta] Calculating event scores...
+[Delta] Computing average score...
+Traceback (most recent call last):
+  File "agent_delta.py", line 47, in <module>
+    main()
+  File "agent_delta.py", line 40, in main
+    events = fetch_events()
+  File "agent_delta.py", line 23, in fetch_events
+    average = 100 / events_found  # BOOM! DivisionError
+ZeroDivisionError: division by zero
+```
+
+## Sentry Integration
+
+When running in the Dream Arena with Sentry enabled:
+
+<CodeGroup>
+```python Sentry Capture
+# Sentry automatically captures:
+{
+  "exception": "ZeroDivisionError: division by zero",
+  "location": "agent_delta.py:23 in fetch_events()",
+  "agent": "Agent Delta (The Crasher)",
+  "timestamp": "2026-01-24T14:32:15Z",
+  "environment": "dream-arena",
+  "phase": "Dream Arena"
+}
+```
+
+```python Dream Arena Response
+# Arena scoring system records:
+{
+  "agent": "delta",
+  "status": "CRASHED",
+  "error": "ZeroDivisionError",
+  "reliability_score": 0,
+  "quality_score": 0,
+  "speed_score": 0,
+  "format_score": 0,
+  "sentry_issue_id": "DREAM-FOUNDRY-42"
+}
+```
+</CodeGroup>
+
+## Demo Walkthrough Moment
+
+In the Dream Foundry demo, Agent Delta plays a crucial role:
+
+### Phase 3: Dream Arena
+
+1. **All 5 agents launch** in parallel Daytona sandboxes
+2. **Alpha, Beta, Gamma, Epsilon** complete successfully
+3. **Delta crashes** with divide-by-zero error
+4. **Sentry notification** appears in real-time
+5. **Arena dashboard** shows Delta with red "CRASHED" status
+6. **Scoring continues** for other agents
+7. **Delta is eliminated** from advancing to Dream Podium
+
+### Key Demo Moment
+
+> **Presenter:** "Notice that Agent Delta has crashed with a divide-by-zero error. Sentry immediately captured this and sent it to our monitoring dashboard. The Dream Arena's scoring system automatically gives Delta a reliability score of zero, preventing it from advancing to the Podium phase. This is how the Foundry ensures only working solutions move forward."
+
+## Performance Characteristics
+
+### Speed Metrics
+- **Execution Time:** Less than 1 second (crashes immediately)
+- **Network Requests:** 0 (crashes before any network calls)
+- **Timeout:** N/A (error occurs synchronously)
+
+### Quality Metrics
+- **Reliability:** 0 (guaranteed crash)
+- **Quality:** 0 (no output produced)
+- **Speed:** 0 (failure despite fast crash)
+- **Format:** 0 (no output to format)
+- **Event Coverage:** 0 events
+
+## Source Code Location
+
+**File:** `/candidates/agent_delta.py`  
+**Lines:** 48 total  
+**Key Functions:**
+- `fetch_events()` - `agent_delta.py:14-25` ⚠️ Crashes here!
+- `main()` - `agent_delta.py:28-44`
+
+## Scoring in Dream Arena
+
+Agent Delta receives:
+- **Speed:** ⭐ (2x weight - ZERO - crashed)
+- **Reliability:** ⭐ (3x weight - ZERO - crashed)
+- **Quality:** ⭐ (3x weight - ZERO - no output)
+- **Format:** ⭐ (1x weight - ZERO - no output)
+
+**Total Score:** 0 points
+
+**Status:** ELIMINATED (does not advance to Dream Podium)
+
+## When to Use Agent Delta
+
+<Card title="Use Cases" icon="flask">
+  - Demonstrating error monitoring with Sentry
+  - Testing Dream Arena crash handling
+  - Showing scoring system behavior on failures
+  - Educational/demo purposes only
+</Card>
+
+<Card title="Never Use For" icon="ban">
+  - Any production workload
+  - Actual event discovery
+  - Performance benchmarking
+  - Anything requiring valid output
+</Card>
+
+## Related Documentation
+
+- [Sentry Integration](/integrations/sentry) - Learn how errors are captured
+- [Dream Arena Scoring](/concepts/scoring-system) - Understand reliability scoring
+- [Five Phases](/concepts/five-phases) - How the Foundry handles crashes
+
+## Educational Value
+
+Agent Delta teaches important lessons:
+
+1. **Error monitoring matters** - Sentry catches issues immediately
+2. **Reliability is weighted** - Crashed agents can't win (3x weight)
+3. **Graceful degradation** - System continues despite one agent failing
+4. **Observable systems** - Real-time monitoring enables quick response
+5. **Safety nets work** - Bad agents are automatically eliminated

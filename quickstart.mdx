@@ -1,80 +1,350 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get your first Dream Foundry forge running in 5 minutes
 ---
 
-## Get started in three steps
+Get Dream Foundry up and running in minutes. This guide walks you through executing your first competitive AI agent forge from scratch.
 
-Get your documentation site running locally and make your first customization.
+## What You'll Build
 
-### Step 1: Set up your local environment
+You'll run a complete Dream Foundry workflow where **5 AI agents compete** to generate a weekly "AI Events in the Bay Area" Discord post. The agents use different strategies (speed vs. quality vs. insider knowledge), and the best implementation wins.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Info>
+**The Demo Scenario**: Multiple agents scrape AI/ML events from lu.ma and Meetup.com, get scored on quality, speed, and reliability, and the winner's output gets published to Discord.
+</Info>
 
-### Step 2: Deploy your changes
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+Before you begin, ensure you have:
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+- **Python 3.12+** installed
+- Basic familiarity with command line
+- (Optional) API keys for advanced features:
+  - `DAYTONA_API_KEY` - For isolated sandbox execution
+  - `SENTRY_DSN` - For error monitoring
+  - `DISCORD_WEBHOOK_URL` - For publishing results
+  - `ELEVENLABS_API_KEY` - For winner announcement narration
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+## Installation
 
-### Step 3: Go live
+<Steps>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+<Step title="Clone and navigate to the project">
+```bash
+git clone <repository-url>
+cd dream-foundry
+```
+</Step>
 
-## Next steps
+<Step title="Install dependencies">
+```bash
+pip install -r requirements.txt
+```
 
-Now that you have your docs running, explore these key features:
+This installs core dependencies:
+- `streamlit` - Demo UI
+- `beautifulsoup4`, `selenium`, `requests` - Web scraping
+- `sentry-sdk` - Error monitoring
+- `python-dotenv` - Environment management
+</Step>
 
-<CardGroup cols={2}>
+<Step title="Configure environment (optional)">
+For the basic demo, no API keys are required. For full features:
 
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+```bash
+cp .env.example .env
+# Edit .env with your API keys
+```
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+Without API keys, the forge runs in **local mode** (no Daytona sandboxes, no Discord publishing). This is perfect for testing!
 </Note>
+</Step>
+
+</Steps>
+
+## Your First Forge Run
+
+### Option 1: CLI Mode (Recommended for First Run)
+
+Run the forge with the default objective:
+
+```bash
+python forge.py
+```
+
+<CodeGroup>
+```bash Default Objective
+python forge.py
+# Uses: "Generate weekly 'AI Events in San Francisco' post for Discord"
+```
+
+```bash Custom Objective
+python forge.py "Find the top 10 AI hackathons in the Bay Area this month"
+```
+
+```bash With Daytona Sandboxes
+python forge.py --daytona "Generate weekly AI Events for Discord"
+# Requires DAYTONA_API_KEY in .env
+```
+</CodeGroup>
+
+### What Happens During Execution
+
+You'll see a **5-phase workflow** in your terminal:
+
+<Steps>
+
+<Step title="Initialization">
+```bash
+============================================================
+DREAM FOUNDRY - Forge Loop
+============================================================
+Objective: Generate weekly 'AI Events in San Francisco' post for Discord
+Candidates: 5
+Execution: LOCAL
+```
+</Step>
+
+<Step title="Running Candidates">
+Each of the 5 agents executes:
+
+```bash
+PHASE: Running Candidates
+----------------------------------------
+
+[Agent Alpha]
+  [Run] Starting Agent Alpha...
+  [Done] Output produced
+  [Done] 4.2s
+
+[Agent Beta]
+  [Run] Starting Agent Beta...
+  [Done] Output produced
+  [Done] 28.5s
+
+[Agent Gamma]
+  [Gamma] Fetching from lu.ma and Meetup...
+  [Gamma] Verified: Daytona HackSprint SF
+  [Gamma] Verified: AI Makerspace Weekly Meetup
+  [Gamma] Found 10 verified events
+  [Done] 3.1s
+
+[Agent Delta]
+  [Error] Timeout after 60 seconds
+  [Sentry] Error captured
+
+[Agent Epsilon]
+  [Done] Output produced
+  [Done] 2.8s
+```
+</Step>
+
+<Step title="Scoring">
+```bash
+============================================================
+PHASE: Scoring
+----------------------------------------
+Candidate     Success  Quality    Speed    TOTAL
+----------------------------------------------
+alpha        PASS     75.6       86.0     77.2
+beta         PASS     91.5       5.0      61.9
+gamma        PASS     94.4       89.7     94.4
+delta        FAIL     0.0        0.0      0.0
+epsilon      PASS     54.5       90.7     63.1
+
+  Quality: 10/10 valid events, Hackathon: Yes
+```
+
+**Scoring Breakdown**:
+- **Success (20%)**: Did it produce output without errors?
+- **Quality (60%)**: Valid events, correct dates (Jan 24-31, 2026), hackathon included, proper URLs
+- **Speed (20%)**: Faster execution = higher score
+</Step>
+
+<Step title="Winner Selection">
+```bash
+============================================================
+WINNER: gamma (score: 94.4)
+============================================================
+
+Scores written to: artifacts/scores.json
+Winner written to: artifacts/winner.txt
+
+Artifacts produced:
+  - artifacts/alpha/discord_post.md [exists]
+  - artifacts/beta/discord_post.md [exists]
+  - artifacts/gamma/discord_post.md [exists]
+  - artifacts/delta/discord_post.md [missing]
+  - artifacts/epsilon/discord_post.md [exists]
+  - artifacts/scores.json
+  - artifacts/winner.txt
+```
+</Step>
+
+</Steps>
+
+### Inspect the Results
+
+View the winning output:
+
+```bash
+cat artifacts/gamma/discord_post.md
+```
+
+<Card title="Example Output" icon="trophy">
+```markdown
+# AI Events in the Bay Area
+## Week of January 24-31, 2026
+
+**Daytona HackSprint SF**
+- Date: Saturday, January 24, 2026
+- Time: 9:00 AM - 6:00 PM
+- Location: San Francisco, CA
+- Type: hackathon
+- [RSVP](https://lu.ma/kga3qtfc) (via lu.ma)
+
+**AI Makerspace Weekly Meetup**
+- Date: Wednesday, January 28, 2026
+- Time: 6:00 PM - 9:00 PM
+- Location: San Francisco, CA
+- Type: meetup
+- [RSVP](https://lu.ma/aimakerspace) (via lu.ma)
+
+...
+
+---
+*Found 10 verified events | Generated by Agent Gamma (The Insider)*
+```
+</Card>
+
+## Option 2: Streamlit UI (Interactive Demo)
+
+For a visual, **9-phase interactive demo**:
+
+```bash
+streamlit run app.py
+```
+
+This launches a browser-based UI at `http://localhost:8501` with:
+
+1. **The Dreamcatcher** - Input your objective
+2. **The Dream Factory** - View candidate strategies
+3. **The Arena** - Watch agents compete in real-time
+4. **Arena Results** - See the scoreboard
+5. **Forge Runoff - Polish** - CodeRabbit improvements (simulated)
+6. **Forge Runoff - Retest** - Re-run with polished code
+7. **The Podium** - Final winner announcement
+8. **Showcase** - ElevenLabs narration + Discord publishing
+
+<Note>
+The Streamlit UI includes simulated CodeRabbit and ElevenLabs features for demonstration purposes. The CLI mode (`forge.py`) runs the actual competitive scoring system.
+</Note>
+
+## Understanding the Candidates
+
+Each agent uses a different strategy:
+
+<CardGroup cols={3}>
+  <Card title="Agent Alpha" icon="bolt">
+    **The Speed Demon**
+    
+    Fast HTTP scraping with BeautifulSoup. Can't handle JavaScript-rendered content.
+    
+    - ⚡ ~4-5s execution
+    - ❌ Misses JS pages
+  </Card>
+  
+  <Card title="Agent Beta" icon="magnifying-glass">
+    **The Perfectionist**
+    
+    Uses Selenium for full page loads. Sees everything a human would.
+    
+    - ✅ Handles JS
+    - 🐌 ~25-30s execution
+  </Card>
+  
+  <Card title="Agent Gamma" icon="link">
+    **The Insider** (Usually Wins)
+    
+    Uses verified event database + direct API calls. Fast and reliable.
+    
+    - ⚡ ~3s execution
+    - ✅ 10/10 quality
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Agent Delta" icon="bomb">
+    **The Crasher**
+    
+    Intentionally unstable to demonstrate Sentry error monitoring.
+    
+    - ❌ Crashes frequently
+    - 📊 Errors captured by Sentry
+  </Card>
+  
+  <Card title="Agent Epsilon" icon="ghost">
+    **The Hallucinator**
+    
+    Generates plausible but unverified data. Fast but unreliable.
+    
+    - ⚡ Very fast
+    - ❌ 0/5 valid events
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Full Installation" icon="download" href="/installation">
+    Set up all API keys for Daytona sandboxes, Sentry monitoring, and Discord publishing
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Learn how the 5-phase Dream Foundry pipeline works
+  </Card>
+  
+  <Card title="Scoring System" icon="chart-line" href="/concepts/scoring-system">
+    Understand how candidates are scored on success, quality, and speed
+  </Card>
+  
+  <Card title="Custom Agents" icon="code" href="/guides/creating-agents">
+    Build your own competing agent implementations
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ImportError: No module named 'dotenv'">
+    Make sure you installed dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Accordion>
+  
+  <Accordion title="All candidates show 'FAIL'">
+    This usually means a network issue or rate limiting. Check:
+    - Internet connection
+    - Firewall settings
+    - Rate limits on lu.ma/Meetup (wait 5 minutes and retry)
+  </Accordion>
+  
+  <Accordion title="Sentry errors not showing">
+    Sentry batches events asynchronously. The forge includes `sentry_sdk.flush()` to force immediate sending. Verify your `SENTRY_DSN` in `.env`.
+  </Accordion>
+  
+  <Accordion title="Daytona sandboxes failing">
+    Ensure:
+    - `DAYTONA_API_KEY` is set in `.env`
+    - You have an active Daytona account
+    - Network allows connections to Daytona API
+    
+    Fallback: Remove `--daytona` flag to run locally
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+**Rate Limiting**: The agents scrape public lu.ma and Meetup pages. If you run the forge repeatedly (>5 times in a minute), you may hit rate limits. Wait 5 minutes between runs or use the `--daytona` flag to isolate requests.
+</Warning>

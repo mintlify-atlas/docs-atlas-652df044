@@ -1,0 +1,442 @@
+---
+title: 'Scoring System'
+description: 'How Dream Foundry evaluates and ranks candidate implementations'
+---
+
+## Overview
+
+Dream Foundry uses a **two-layer judging system** to prevent "LLM rubber stamp" failures:
+
+1. **Layer A (Hard Gates)**: Deterministic checks - no LLM, pass/fail
+2. **Layer B (Rubric Score)**: Weighted scoring across Success, Quality, and Speed
+
+If a candidate fails ANY hard gate, it's **disqualified** regardless of rubric score.
+
+## Scoring Formula
+
+Candidates are scored on three weighted criteria:
+
+```python
+# From scoring.py:352
+weights = {'success': 0.2, 'quality': 0.6, 'speed': 0.2}
+
+total_score = (
+    success_score * 0.2 +
+    quality_score * 0.6 +
+    speed_score * 0.2
+)
+```
+
+<Note>
+**Success: 20%** | **Quality: 60%** | **Speed: 20%**
+
+Quality dominates the scoring because a fast, error-free implementation that produces garbage output is worthless.
+</Note>
+
+---
+
+## Layer A: Hard Gates
+
+These deterministic checks run BEFORE any scoring. They're fast, reliable, and objective.
+
+### Gate 1: Produces Artifact
+
+Does the candidate generate output files?
+
+```python
+# From scoring_rubric.md:34
+artifact_path = output_dir / "events.json"
+alt_artifact = output_dir / "events.md"
+produces_artifact = artifact_path.exists() or alt_artifact.exists()
+```
+
+**Fails if**: No output file exists
+
+### Gate 2: Artifact Not Empty
+
+Is the output file meaningful?
+
+```python
+# From scoring_rubric.md:48
+content = artifact.read_text().strip()
+not_empty = len(content) > 10
+```
+
+**Fails if**: Content ≤ 10 characters
+
+### Gate 3: Has Required Fields
+
+Does the output contain necessary data?
+
+```python
+# From scoring_rubric.md:59
+has_fields = all(
+    "title" in e and "date" in e and "url" in e
+    for e in events
+)
+```
+
+**Fails if**: Missing title, date, or URL fields
+
+### Gate 4: Minimum Event Count
+
+Does the output have enough events?
+
+```python
+# From scoring_rubric.md:97
+min_count = count >= 3
+```
+
+**Fails if**: Fewer than 3 events
+
+### Gate 5: No Fatal Errors
+
+Did the process complete successfully?
+
+```python
+# From forge.py:169
+if result.returncode != 0:
+    error_occurred = True
+```
+
+**Fails if**: Non-zero exit code
+
+<CardGroup cols={2}>
+  <Card title="Agent Delta" icon="circle-xmark">
+    **Fails Gate 5**
+    
+    Crashes with divide-by-zero error:
+    ```python
+    events_found = 0
+    average = 100 / events_found  # BOOM!
+    ```
+    
+    Result: **Disqualified**
+  </Card>
+
+  <Card title="Agent Epsilon" icon="circle-check">
+    **Passes All Gates**
+    
+    Produces output with required fields, but data is low quality (wrong dates, wrong locations).
+    
+    Result: **Proceeds to scoring** (but gets low quality score)
+  </Card>
+</CardGroup>
+
+---
+
+## Layer B: Rubric Scoring
+
+Only candidates that pass ALL hard gates proceed to rubric scoring.
+
+### Success Score (20%)
+
+Binary: Did the candidate run without errors?
+
+```python
+# From scoring.py:377
+success = produced_output and not error_occurred
+
+if not success:
+    return 0.0  # Instant disqualification
+
+success_score = 100.0
+```
+
+**Calculation**:
+- Success = 100 points
+- Failure = 0 points (disqualified)
+
+### Quality Score (60%)
+
+Most important criterion. Validates output against strict requirements.
+
+#### Validation Rules
+
+<Steps>
+  <Step title="Date Validation">
+    Must be January 24-31, 2026:
+    
+    ```python
+    # From scoring.py:62
+    VALID_DATE_START = datetime(2026, 1, 24)
+    VALID_DATE_END = datetime(2026, 1, 31)
+    
+    def is_valid_date(date_str: str) -> bool:
+        parsed = parse_date(date_str)
+        if not parsed:
+            return False
+        return VALID_DATE_START <= parsed <= VALID_DATE_END
+    ```
+  </Step>
+  
+  <Step title="Location Validation">
+    Must be SF, San Jose, Palo Alto, or Mountain View ONLY:
+    
+    ```python
+    # From scoring.py:66
+    VALID_LOCATIONS = [
+        "san francisco",
+        "san jose",
+        "palo alto",
+        "mountain view",
+    ]
+    
+    def is_valid_location(location: str) -> bool:
+        location_lower = location.lower()
+        return any(valid_loc in location_lower for valid_loc in VALID_LOCATIONS)
+    ```
+  </Step>
+  
+  <Step title="AI Relevance">
+    Must be AI/ML related:
+    
+    ```python
+    # From scoring.py:87
+    AI_KEYWORDS = [
+        'ai', 'machine learning', 'ml', 'llm', 'gpt', 'claude',
+        'langchain', 'rag', 'neural', 'deep learning', 'nlp',
+        'computer vision', 'generative', 'transformer', 'agent',
+        'anthropic', 'openai', 'hugging face', 'pytorch',
+        'tensorflow', 'data science', 'mlops', 'embedding',
+        'vector', 'genai', 'diffusion', 'hackathon',
+    ]
+    
+    def is_ai_related(title: str) -> bool:
+        title_lower = title.lower()
+        return any(keyword in title_lower for keyword in AI_KEYWORDS)
+    ```
+  </Step>
+  
+  <Step title="URL Validation">
+    Must be from known event platforms:
+    
+    ```python
+    # From scoring.py:75
+    VALID_URL_PATTERNS = [
+        r'https?://(www\.)?lu\.ma/',
+        r'https?://(www\.)?luma\.com/',
+        r'https?://(www\.)?meetup\.com/',
+        r'https?://(www\.)?eventbrite\.(com|co\.uk)/',
+        r'https?://(www\.)?partiful\.com/',
+        r'https?://(www\.)?supermomos\.com/',
+        r'https?://(www\.)?humanx\.co/',
+        r'https?://(compute\.)?daytona\.io/',
+    ]
+    ```
+  </Step>
+  
+  <Step title="Hackathon Requirement">
+    Must include at least one hackathon event:
+    
+    ```python
+    # From scoring.py:157
+    def has_hackathon_event(events: list[dict]) -> bool:
+        for event in events:
+            title = event.get('title', '').lower()
+            event_type = event.get('event_type', '').lower()
+            if 'hackathon' in title or 'hackathon' in event_type:
+                return True
+        return False
+    ```
+  </Step>
+</Steps>
+
+#### Quality Score Calculation
+
+```python
+# From scoring.py:276
+score = 0.0
+
+# Valid events: up to 40 points (10+ valid = 40 points)
+if total_events > 0:
+    valid_ratio = valid_events / total_events
+    score += valid_ratio * 40
+
+# Hackathon event: 25 points
+if hackathon_found:
+    score += 25
+
+# Event count bonus: up to 20 points (14+ events = 20 points)
+score += min(20, (valid_events / 14) * 20)
+
+# No invalid events bonus: 15 points
+if len(invalid_date_events) == 0 and len(invalid_location_events) == 0:
+    score += 15
+```
+
+**Maximum Score**: 100 points
+
+<Accordion title="Quality Breakdown Example">
+  Agent Gamma's quality score:
+  
+  - 10 valid events out of 10 total → **40 points** (100% valid ratio × 40)
+  - Hackathon event included → **25 points**
+  - 10 valid events → **14.3 points** (10/14 × 20)
+  - Zero invalid events → **15 points**
+  
+  **Total**: 94.3/100
+</Accordion>
+
+### Speed Score (20%)
+
+Faster execution gets higher scores:
+
+```python
+# From scoring.py:332
+def calculate_speed_score(runtime_seconds: float, max_time: float = 30.0) -> float:
+    if runtime_seconds <= 0:
+        return 100.0
+    if runtime_seconds >= max_time:
+        return 0.0
+    return round(100 * (1 - runtime_seconds / max_time), 1)
+```
+
+**Calculation**:
+- 0 seconds = 100 points
+- 30+ seconds = 0 points
+- Linear interpolation between
+
+<Accordion title="Speed Examples">
+  - Agent Alpha: 4.2s → **86.0 points**
+  - Agent Beta: 12.8s → **57.3 points**
+  - Agent Gamma: 6.5s → **78.3 points**
+</Accordion>
+
+---
+
+## Final Score Calculation
+
+Putting it all together:
+
+```python
+# From scoring.py:359
+total = (
+    success_score * weights['success'] +
+    quality_score * weights['quality'] +
+    speed_score * weights['speed']
+)
+```
+
+### Example: Agent Gamma
+
+```python
+success_score = 100.0  # Ran without errors
+quality_score = 94.3   # 10 valid events, hackathon included
+speed_score = 78.3     # 6.5 seconds execution
+
+total_score = (
+    100.0 * 0.2 +    # Success: 20.0
+    94.3 * 0.6 +     # Quality: 56.6
+    78.3 * 0.2       # Speed: 15.7
+) = 92.3
+```
+
+### Example: Agent Alpha
+
+```python
+success_score = 100.0  # Ran without errors
+quality_score = 45.0   # Missing hackathon event, only 4 events
+speed_score = 86.0     # Very fast: 4.2 seconds
+
+total_score = (
+    100.0 * 0.2 +    # Success: 20.0
+    45.0 * 0.6 +     # Quality: 27.0
+    86.0 * 0.2       # Speed: 17.2
+) = 64.2
+```
+
+### Example: Agent Delta
+
+```python
+success_score = 0.0    # Crashed with divide-by-zero
+quality_score = 0.0    # No output produced
+speed_score = 0.0      # Failed before completion
+
+total_score = 0.0      # Disqualified
+```
+
+---
+
+## Sentry Integration
+
+Sentry provides reliability data for scoring:
+
+```python
+# From scoring_rubric.md:252
+def calculate_reliability_score(
+    exit_code: int,
+    exception_count: int,
+    sentry_event_count: int,
+) -> float:
+    if exit_code != 0:
+        return 0  # Hard fail
+
+    base = 100
+    exception_penalty = exception_count * 10
+    sentry_penalty = sentry_event_count * 5
+
+    return max(0, base - exception_penalty - sentry_penalty)
+```
+
+**Penalty Structure**:
+- Exception: -10 points each
+- Sentry event: -5 points each
+- Non-zero exit code: Instant 0
+
+---
+
+## Scoreboard Display
+
+Results are shown in a clear, sortable format:
+
+```
+╔══════════════════════════════════════════════════════════════╗
+║                    THE FORGE - SCOREBOARD                     ║
+╠══════════════════════════════════════════════════════════════╣
+║  Candidate         │ Gates │ Rel  │ Qual │ Spd  │ Fmt  │ TOTAL║
+╠══════════════════════════════════════════════════════════════╣
+║  🥇 Agent Gamma    │ ✅ 5/5 │  95  │  94  │  78  │  90  │ 92.3 ║
+║  🥈 Agent Beta     │ ✅ 5/5 │  90  │  88  │  57  │  85  │ 84.1 ║
+║  🥉 Agent Alpha    │ ✅ 5/5 │  100 │  45  │  86  │  75  │ 64.2 ║
+╠══════════════════════════════════════════════════════════════╣
+║  ❌ Agent Epsilon  │ ✅ 5/5 │  100 │  12  │  92  │  60  │ 34.4 ║
+║  ❌ Agent Delta    │ ❌ 0/5 │  0   │  0   │  0   │  0   │ DQ   ║
+╚══════════════════════════════════════════════════════════════╝
+```
+
+---
+
+## Key Insights
+
+<CardGroup cols={2}>
+  <Card title="Quality Dominates" icon="star">
+    With 60% weight, quality is the primary differentiator. Fast garbage loses to slow excellence.
+  </Card>
+  
+  <Card title="Hard Gates Prevent Gaming" icon="shield">
+    Deterministic checks ensure LLMs can't "rubber stamp" bad outputs. You either pass or you don't.
+  </Card>
+  
+  <Card title="Speed Matters, But Less" icon="clock">
+    At 20%, speed is a tiebreaker. Agent Alpha's speed can't overcome its quality deficit.
+  </Card>
+  
+  <Card title="Strict Validation" icon="check-circle">
+    Every event is validated against 4 criteria: date, location, AI-relevance, URL. No shortcuts.
+  </Card>
+</CardGroup>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Agent Strategies" href="/concepts/agent-strategies" icon="robot">
+    See how each agent's strategy affects their scores
+  </Card>
+  
+  <Card title="Architecture" href="/concepts/architecture" icon="diagram-project">
+    Understand the system design behind the scoring
+  </Card>
+</CardGroup>

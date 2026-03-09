@@ -1,0 +1,555 @@
+---
+title: Sandbox Execution
+description: Run agents in isolated Daytona sandboxes for true parallelism and safety
+---
+
+Daytona provides isolated sandbox environments for running each agent implementation. This ensures true isolation, prevents resource conflicts, and enables safe execution of untrusted code.
+
+## Why Sandboxes?
+
+Running agents in sandboxes provides several benefits:
+
+<CardGroup cols={2}>
+  <Card title="Isolation" icon="box">
+    Each agent runs in its own environment with no shared state
+  </Card>
+  <Card title="Safety" icon="shield">
+    Untrusted code can't affect your system or other agents
+  </Card>
+  <Card title="Parallelism" icon="bolt">
+    True parallel execution without resource contention
+  </Card>
+  <Card title="Consistency" icon="check">
+    Identical environments ensure fair comparison
+  </Card>
+</CardGroup>
+
+## Configuration
+
+Daytona integration requires minimal configuration.
+
+### Environment Variables
+
+Set these in your `.env` file:
+
+```bash
+# Required
+DAYTONA_API_KEY=your_daytona_api_key_here
+
+# Optional
+DAYTONA_BASE_URL=https://api.daytona.io/v1  # Default
+```
+
+### Checking Configuration
+
+Verify your setup:
+
+```python
+from src.daytona_runner import is_daytona_configured
+
+if is_daytona_configured():
+    print("Daytona is ready!")
+else:
+    print("Daytona not configured, will use local execution")
+```
+
+<Note>
+The forge automatically falls back to local execution if Daytona is not configured.
+</Note>
+
+## How It Works
+
+The Daytona integration follows a simple workflow:
+
+<Steps>
+  <Step title="Initialize Daytona client">
+    ```python
+    # From daytona_runner.py:124-127
+    log("[Daytona] Connecting...")
+    config = DaytonaConfig(api_key=api_key)
+    daytona = Daytona(config)
+    ```
+  </Step>
+  
+  <Step title="Create sandbox">
+    ```python
+    # From daytona_runner.py:129-133
+    log("[Daytona] Creating sandbox...")
+    sandbox = daytona.create()
+    sandbox_id = sandbox.id if hasattr(sandbox, 'id') else str(sandbox)
+    log(f"[Daytona] Sandbox ready: {sandbox_id[:8]}...")
+    ```
+  </Step>
+  
+  <Step title="Upload agent script">
+    ```python
+    # From daytona_runner.py:135-148
+    import base64
+    script_content = Path(script_path).read_text()
+    script_b64 = base64.b64encode(script_content.encode()).decode()
+    
+    sandbox_script_path = f"/home/daytona/{candidate_id}.py"
+    sandbox_output = f"/home/daytona/{candidate_id}_output.md"
+    
+    # Write script using base64 decode
+    write_cmd = f"echo '{script_b64}' | base64 -d > {sandbox_script_path}"
+    write_result = sandbox.process.exec(write_cmd, timeout=30)
+    log(f"[Daytona] Script uploaded")
+    ```
+  </Step>
+  
+  <Step title="Execute agent">
+    ```python
+    # From daytona_runner.py:150-158
+    log("[Run] Executing...")
+    escaped_objective = objective.replace("'", "'\\''")
+    cmd = f"python3 {sandbox_script_path} '{escaped_objective}' {sandbox_output}"
+    result = sandbox.process.exec(cmd, timeout=60)
+    
+    output = result.result if hasattr(result, 'result') else str(result)
+    exit_code = result.exit_code if hasattr(result, 'exit_code') else 0
+    
+    log(f"[Run] Exit code: {exit_code}")
+    ```
+  </Step>
+  
+  <Step title="Retrieve artifact">
+    ```python
+    # From daytona_runner.py:161-171
+    artifact_content = None
+    try:
+        cat_result = sandbox.process.exec(f"cat {sandbox_output}", timeout=10)
+        if cat_result.exit_code == 0:
+            artifact_content = cat_result.result
+            log("[Done] Artifact retrieved")
+        else:
+            log(f"[Warn] Could not read artifact: exit {cat_result.exit_code}")
+    except Exception as e:
+        log(f"[Warn] Could not retrieve artifact: {e}")
+    ```
+  </Step>
+  
+  <Step title="Cleanup sandbox">
+    ```python
+    # From daytona_runner.py:201-208
+    finally:
+        if sandbox:
+            try:
+                log("[Daytona] Cleaning up...")
+                daytona.delete(sandbox)
+            except Exception as e:
+                log(f"[Warn] Cleanup failed: {e}")
+    ```
+  </Step>
+</Steps>
+
+## Running with Sandboxes
+
+Enable Daytona execution with the `--daytona` flag:
+
+```bash
+python forge.py --daytona
+```
+
+Or via the programmatic API:
+
+```python
+from forge import run_forge
+
+result = run_forge(
+    objective="Generate weekly AI events",
+    use_daytona=True
+)
+```
+
+### Execution Mode Detection
+
+The forge automatically detects and reports the execution mode:
+
+```python
+# From forge.py:222-227
+daytona_available = is_daytona_configured()
+execution_mode = "daytona" if (use_daytona and daytona_available) else "local"
+print(f"Execution: {execution_mode.upper()}")
+if use_daytona and not daytona_available:
+    print("  (Daytona not configured, falling back to local)")
+```
+
+You'll see output like:
+
+```
+Execution: DAYTONA
+```
+
+or
+
+```
+Execution: LOCAL
+  (Daytona not configured, falling back to local)
+```
+
+## Sandbox Lifecycle
+
+Each agent gets a fresh sandbox:
+
+```python
+# From daytona_runner.py:211-248
+def run_all_candidates_in_daytona(
+    candidates: list[dict],
+    objective: str,
+    artifacts_dir: Path,
+    log_callback: Optional[Callable[[str, str], None]] = None,
+) -> list[DaytonaResult]:
+    """
+    Run all candidates in Daytona sandboxes.
+
+    Each candidate runs in its own isolated sandbox.
+    """
+    results = []
+
+    for candidate in candidates:
+        candidate_id = candidate["id"]
+        script_path = candidate["script"]
+
+        # Local output path (we'll copy artifact here after)
+        output_dir = artifacts_dir / candidate_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_file = output_dir / "discord_post.md"
+
+        # Run in Daytona
+        result = run_candidate_in_daytona(
+            candidate_id=candidate_id,
+            script_path=script_path,
+            objective=objective,
+            output_file=str(output_file),
+            log_callback=log_callback,
+        )
+
+        # Save artifact locally if we got one
+        if result.artifact_content:
+            output_file.write_text(result.artifact_content)
+
+        results.append(result)
+
+    return results
+```
+
+Sandboxes are:
+- Created fresh for each agent
+- Completely isolated from each other
+- Destroyed after execution completes
+- Independent of execution order
+
+## Result Object
+
+Daytona execution returns a detailed result:
+
+```python
+# From daytona_runner.py:38-47
+@dataclass
+class DaytonaResult:
+    """Result from running a candidate in Daytona."""
+    candidate_id: str
+    sandbox_id: Optional[str]
+    success: bool
+    output: str
+    artifact_content: Optional[str]
+    runtime_seconds: float
+    error_message: Optional[str] = None
+```
+
+Example result:
+
+```python
+DaytonaResult(
+    candidate_id="gamma",
+    sandbox_id="sb_kj4h2k3j4",
+    success=True,
+    output="[Gamma] Found 10 events\n[Gamma] Done!",
+    artifact_content="# AI Events in the Bay Area\n...",
+    runtime_seconds=3.2,
+    error_message=None
+)
+```
+
+## Sandbox Environment
+
+Each sandbox includes:
+
+- **Python 3.11+**: Default Python environment
+- **Working directory**: `/home/daytona`
+- **Script location**: `/home/daytona/{candidate_id}.py`
+- **Output location**: `/home/daytona/{candidate_id}_output.md`
+
+### Installing Dependencies
+
+If your agent needs additional packages, install them in the sandbox:
+
+```python
+# Install packages before running agent
+install_cmd = "pip install requests beautifulsoup4"
+sandbox.process.exec(install_cmd, timeout=60)
+
+# Then run agent
+run_cmd = f"python3 {sandbox_script_path} ..."
+sandbox.process.exec(run_cmd, timeout=60)
+```
+
+## Error Handling
+
+The integration handles multiple error scenarios:
+
+### API Key Not Configured
+
+```python
+# From daytona_runner.py:97-106
+if not api_key:
+    return DaytonaResult(
+        candidate_id=candidate_id,
+        sandbox_id=None,
+        success=False,
+        output="",
+        artifact_content=None,
+        runtime_seconds=0,
+        error_message="Daytona API key not configured",
+    )
+```
+
+### SDK Not Installed
+
+```python
+# From daytona_runner.py:108-117
+if not DAYTONA_AVAILABLE:
+    return DaytonaResult(
+        candidate_id=candidate_id,
+        sandbox_id=None,
+        success=False,
+        output="",
+        artifact_content=None,
+        runtime_seconds=0,
+        error_message="Daytona SDK not installed",
+    )
+```
+
+### Execution Errors
+
+```python
+# From daytona_runner.py:188-199
+except Exception as e:
+    elapsed = time.time() - start_time
+    log(f"[Error] {str(e)[:50]}")
+    return DaytonaResult(
+        candidate_id=candidate_id,
+        sandbox_id=sandbox_id,
+        success=False,
+        output="",
+        artifact_content=None,
+        runtime_seconds=elapsed,
+        error_message=str(e),
+    )
+```
+
+## Configuration Options
+
+Customize sandbox behavior via environment variables:
+
+```python
+# From daytona_runner.py:50-59
+def get_daytona_config() -> tuple[Optional[str], Optional[str]]:
+    """Get Daytona API key and base URL from environment."""
+    api_key = os.getenv("DAYTONA_API_KEY")
+    base_url = os.getenv("DAYTONA_BASE_URL", "https://api.daytona.io/v1")
+
+    # Filter out placeholder values
+    if api_key and api_key.startswith("your_"):
+        api_key = None
+
+    return api_key, base_url
+```
+
+### Available Options
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DAYTONA_API_KEY` | None | Your Daytona API key (required) |
+| `DAYTONA_BASE_URL` | `https://api.daytona.io/v1` | API endpoint |
+
+## Timeouts
+
+Different operations have different timeout limits:
+
+```python
+# Upload script: 30 seconds
+write_result = sandbox.process.exec(write_cmd, timeout=30)
+
+# Execute agent: 60 seconds
+result = sandbox.process.exec(cmd, timeout=60)
+
+# Retrieve artifact: 10 seconds
+cat_result = sandbox.process.exec(f"cat {sandbox_output}", timeout=10)
+```
+
+These timeouts ensure:
+- Fast failure on stuck operations
+- Fair comparison between agents
+- Reasonable resource usage
+
+<Warning>
+If your agent consistently times out, optimize its execution time or increase the timeout in `daytona_runner.py:154`.
+</Warning>
+
+## Troubleshooting
+
+### Sandbox Creation Fails
+
+**Symptom**: "Could not create sandbox"
+
+**Solutions**:
+1. Verify API key: `echo $DAYTONA_API_KEY`
+2. Check API status: Visit Daytona status page
+3. Try local execution: `python forge.py` (without `--daytona`)
+
+### Script Upload Fails
+
+**Symptom**: "Could not write script"
+
+**Solutions**:
+1. Check script path exists: `ls -l candidates/`
+2. Verify script is readable: `cat candidates/agent_alpha.py`
+3. Check for special characters in script that break base64 encoding
+
+### Execution Timeout
+
+**Symptom**: "Execution timed out after 60 seconds"
+
+**Solutions**:
+1. Optimize agent code (see [Creating Agents](/guides/creating-agents))
+2. Increase timeout in `daytona_runner.py:154`:
+   ```python
+   result = sandbox.process.exec(cmd, timeout=120)  # 2 minutes
+   ```
+3. Check for infinite loops or blocking calls
+
+### Artifact Not Retrieved
+
+**Symptom**: "Could not read artifact"
+
+**Solutions**:
+1. Verify agent writes to correct path:
+   ```python
+   # Agent should write to sys.argv[2]
+   output_file.write_text(content)
+   ```
+2. Check file permissions in sandbox
+3. Ensure agent exits cleanly (code 0)
+
+### Cleanup Warnings
+
+**Symptom**: "[Warn] Cleanup failed"
+
+**Impact**: Low - sandbox will be garbage collected
+
+**Solutions**:
+- Usually safe to ignore
+- If persistent, check API connectivity
+- Verify API key has delete permissions
+
+## Best Practices
+
+### 1. Design for Isolation
+
+Don't rely on local state:
+
+```python
+# ❌ Bad: Reads local cache
+cache = Path(".cache/data.json")
+if cache.exists():
+    return cache.read_text()
+
+# ✅ Good: Self-contained
+data = fetch_from_api()
+return data
+```
+
+### 2. Handle Timeouts Gracefully
+
+```python
+try:
+    response = requests.get(url, timeout=5)
+except requests.Timeout:
+    print("[Agent] Timeout, skipping...")
+    # Continue with partial results
+```
+
+### 3. Log Progress
+
+```python
+print("[Agent] Starting fetch...")
+print(f"[Agent] Processing {len(items)} items...")
+print("[Agent] Writing output...")
+```
+
+Logs appear in the Streamlit UI and help with debugging.
+
+### 4. Test Locally First
+
+Develop and test without sandboxes:
+
+```bash
+# Fast iteration
+python candidates/agent_custom.py "test" /tmp/out.md
+
+# Then test in sandbox
+python forge.py --daytona
+```
+
+### 5. Keep Dependencies Minimal
+
+Use standard library when possible:
+
+```python
+# ✅ Standard library - works immediately
+import urllib.request
+import json
+
+# ❌ External package - requires pip install in sandbox
+import requests
+```
+
+## Performance Comparison
+
+### Local vs Daytona
+
+| Aspect | Local | Daytona |
+|--------|-------|----------|
+| Startup time | ~0s | ~2-5s |
+| Isolation | None | Complete |
+| Parallelism | Limited | True |
+| Resource usage | Shared | Dedicated |
+| Debugging | Easy | Moderate |
+
+### When to Use Each
+
+**Use Local for**:
+- Development and testing
+- Quick iterations
+- Single-agent testing
+- Resource-constrained environments
+
+**Use Daytona for**:
+- Production runs
+- Multi-agent competition
+- Untrusted code
+- True parallel execution
+- Reproducible results
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Agents" href="/guides/creating-agents" icon="robot">
+    Build agents optimized for sandbox execution
+  </Card>
+  <Card title="Integrations" href="/guides/integrations" icon="plug">
+    Explore all Dream Foundry integrations
+  </Card>
+</CardGroup>

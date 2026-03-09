@@ -1,0 +1,363 @@
+---
+title: 'Daytona Runner'
+description: 'Run candidate agents in isolated Daytona sandboxes'
+icon: 'box'
+---
+
+The Daytona Runner module provides isolated sandbox execution for candidate agents in the Dream Arena phase. Each candidate runs in its own Daytona sandbox with full isolation, monitoring, and artifact capture.
+
+## Overview
+
+The module handles:
+- Creating isolated sandboxes for each candidate
+- Uploading and executing candidate scripts
+- Capturing stdout and generated artifacts
+- Measuring execution time and success metrics
+- Automatic cleanup of sandbox resources
+
+<Note>
+  Requires the Daytona SDK (`pip install daytona-sdk`) and a valid `DAYTONA_API_KEY` in your environment.
+</Note>
+
+---
+
+## Configuration
+
+### Environment Variables
+
+<ParamField path="DAYTONA_API_KEY" type="string" required>
+  Your Daytona API key for authentication
+</ParamField>
+
+<ParamField path="DAYTONA_BASE_URL" type="string" default="https://api.daytona.io/v1">
+  The Daytona API base URL
+</ParamField>
+
+### Configuration Functions
+
+<CodeGroup>
+```python get_daytona_config()
+"""Get Daytona API key and base URL from environment.
+
+Returns:
+    tuple[Optional[str], Optional[str]]: (api_key, base_url)
+"""
+```
+
+```python is_daytona_configured()
+"""Check if Daytona is properly configured.
+
+Returns:
+    bool: True if SDK is installed and API key is set
+"""
+```
+</CodeGroup>
+
+---
+
+## Core Functions
+
+### run_candidate_in_daytona
+
+Run a single candidate script in a Daytona sandbox.
+
+```python
+def run_candidate_in_daytona(
+    candidate_id: str,
+    script_path: str,
+    objective: str,
+    output_file: str,
+    log_callback: Optional[Callable[[str, str], None]] = None,
+) -> DaytonaResult:
+```
+
+#### Parameters
+
+<ParamField path="candidate_id" type="string" required>
+  Identifier for the candidate (e.g., "alpha", "beta", "gamma")
+</ParamField>
+
+<ParamField path="script_path" type="string" required>
+  Local path to the candidate Python script to execute
+</ParamField>
+
+<ParamField path="objective" type="string" required>
+  The objective string to pass as the first argument to the script
+</ParamField>
+
+<ParamField path="output_file" type="string" required>
+  Path where the script should write its output artifact (inside sandbox)
+</ParamField>
+
+<ParamField path="log_callback" type="Callable[[str, str], None]">
+  Optional callback for logging progress. Receives `(candidate_id, message)` for each log event.
+</ParamField>
+
+#### Returns
+
+<ResponseField name="DaytonaResult" type="DaytonaResult">
+  Result object containing execution details and artifacts
+</ResponseField>
+
+#### Example
+
+<CodeGroup>
+```python Basic Usage
+from src.daytona_runner import run_candidate_in_daytona
+
+result = run_candidate_in_daytona(
+    candidate_id="alpha",
+    script_path="candidates/agent_alpha.py",
+    objective="Generate AI events for Discord",
+    output_file="/home/daytona/output.md",
+)
+
+if result.success:
+    print(f"Execution time: {result.runtime_seconds:.2f}s")
+    print(f"Artifact content:\n{result.artifact_content}")
+else:
+    print(f"Error: {result.error_message}")
+```
+
+```python With Logging
+def log_progress(candidate_id: str, message: str):
+    print(f"[{candidate_id}] {message}")
+
+result = run_candidate_in_daytona(
+    candidate_id="beta",
+    script_path="candidates/agent_beta.py",
+    objective="Weekly AI events for SF",
+    output_file="/home/daytona/beta_output.md",
+    log_callback=log_progress,
+)
+```
+</CodeGroup>
+
+#### Execution Flow
+
+1. **Initialize** - Connect to Daytona API with credentials
+2. **Create Sandbox** - Provision isolated sandbox environment
+3. **Upload Script** - Base64 encode and transfer script to sandbox
+4. **Execute** - Run script with objective and output path arguments
+5. **Capture Output** - Collect stdout and read artifact file
+6. **Cleanup** - Delete sandbox resources
+7. **Return Result** - Package all data into `DaytonaResult`
+
+---
+
+### run_all_candidates_in_daytona
+
+Run multiple candidates in parallel, each in their own sandbox.
+
+```python
+def run_all_candidates_in_daytona(
+    candidates: list[dict],
+    objective: str,
+    artifacts_dir: Path,
+    log_callback: Optional[Callable[[str, str], None]] = None,
+) -> list[DaytonaResult]:
+```
+
+#### Parameters
+
+<ParamField path="candidates" type="list[dict]" required>
+  List of candidate dictionaries with `id` and `script` keys
+  
+  ```python
+  [
+      {"id": "alpha", "script": "candidates/agent_alpha.py"},
+      {"id": "beta", "script": "candidates/agent_beta.py"},
+      {"id": "gamma", "script": "candidates/agent_gamma.py"},
+  ]
+  ```
+</ParamField>
+
+<ParamField path="objective" type="string" required>
+  The objective to pass to all candidates
+</ParamField>
+
+<ParamField path="artifacts_dir" type="Path" required>
+  Local directory where artifacts will be saved (creates subdirectories per candidate)
+</ParamField>
+
+<ParamField path="log_callback" type="Callable[[str, str], None]">
+  Optional callback for logging progress from all candidates
+</ParamField>
+
+#### Returns
+
+<ResponseField name="results" type="list[DaytonaResult]">
+  List of result objects, one per candidate, in the same order as input
+</ResponseField>
+
+#### Example
+
+```python
+from pathlib import Path
+from src.daytona_runner import run_all_candidates_in_daytona
+
+candidates = [
+    {"id": "alpha", "script": "candidates/agent_alpha.py"},
+    {"id": "beta", "script": "candidates/agent_beta.py"},
+    {"id": "gamma", "script": "candidates/agent_gamma.py"},
+]
+
+results = run_all_candidates_in_daytona(
+    candidates=candidates,
+    objective="Build a Discord bot for AI events",
+    artifacts_dir=Path("artifacts/round_1"),
+)
+
+# Analyze results
+for result in results:
+    print(f"{result.candidate_id}: {result.success} ({result.runtime_seconds:.1f}s)")
+    if result.artifact_content:
+        print(f"  Artifact: {len(result.artifact_content)} chars")
+```
+
+---
+
+## Data Classes
+
+### DaytonaResult
+
+Contains the complete execution result for a candidate.
+
+```python
+@dataclass
+class DaytonaResult:
+    """Result from running a candidate in Daytona."""
+    candidate_id: str
+    sandbox_id: Optional[str]
+    success: bool
+    output: str
+    artifact_content: Optional[str]
+    runtime_seconds: float
+    error_message: Optional[str] = None
+```
+
+#### Fields
+
+<ResponseField name="candidate_id" type="string">
+  The candidate identifier ("alpha", "beta", "gamma")
+</ResponseField>
+
+<ResponseField name="sandbox_id" type="string | null">
+  The Daytona sandbox ID (first 8 characters shown in logs)
+</ResponseField>
+
+<ResponseField name="success" type="boolean">
+  Whether the execution completed successfully (exit code 0 and artifact retrieved)
+</ResponseField>
+
+<ResponseField name="output" type="string">
+  Standard output from the script execution
+</ResponseField>
+
+<ResponseField name="artifact_content" type="string | null">
+  The contents of the output file, if successfully retrieved
+</ResponseField>
+
+<ResponseField name="runtime_seconds" type="float">
+  Total execution time including sandbox creation and cleanup
+</ResponseField>
+
+<ResponseField name="error_message" type="string | null">
+  Error description if `success` is False
+</ResponseField>
+
+---
+
+## Sandbox Configuration
+
+Each sandbox runs with the following configuration:
+
+<CodeGroup>
+```python Sandbox Environment
+# Default working directory
+/home/daytona/
+
+# Python version
+python3 (system default)
+
+# Script location pattern
+/home/daytona/{candidate_id}.py
+
+# Output location pattern
+/home/daytona/{candidate_id}_output.md
+```
+
+```python Script Execution
+# Command pattern
+python3 /home/daytona/{candidate_id}.py '{objective}' {output_path}
+
+# Execution timeout
+60 seconds
+
+# Upload timeout
+30 seconds
+```
+</CodeGroup>
+
+---
+
+## Error Handling
+
+The module handles several error scenarios gracefully:
+
+<CodeGroup>
+```python Configuration Errors
+# Returns DaytonaResult with success=False
+if not DAYTONA_API_KEY:
+    error_message = "Daytona API key not configured"
+
+if not DAYTONA_AVAILABLE:
+    error_message = "Daytona SDK not installed"
+```
+
+```python Runtime Errors
+# Captures and returns errors in DaytonaResult
+try:
+    result = sandbox.process.exec(cmd, timeout=60)
+except Exception as e:
+    error_message = str(e)
+    success = False
+```
+
+```python Cleanup Errors
+# Logs warnings but doesn't fail the operation
+try:
+    daytona.delete(sandbox)
+except Exception as e:
+    log(f"[Warn] Cleanup failed: {e}")
+```
+</CodeGroup>
+
+---
+
+## Best Practices
+
+<Note>
+  **Sandbox Lifecycle**: Sandboxes are automatically created and destroyed for each execution. No manual cleanup is required.
+</Note>
+
+<Note>
+  **Timeouts**: Scripts have 60 seconds to complete. Ensure your candidate scripts finish within this window.
+</Note>
+
+<Note>
+  **Artifact Retrieval**: The script must write to the exact `output_file` path provided. Use `sys.argv[2]` to get this path.
+</Note>
+
+<Note>
+  **Shell Escaping**: Objectives containing quotes are automatically escaped. Pass them directly without manual escaping.
+</Note>
+
+---
+
+## Related Documentation
+
+- [Dream Arena Architecture](/concepts/five-phases)
+- [Candidate Scripts](/guides/creating-agents)
+- [Scoring System](/concepts/scoring-system)
+- [Daytona Python SDK](https://www.daytona.io/docs/en/python-sdk/)

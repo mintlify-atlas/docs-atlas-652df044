@@ -1,0 +1,413 @@
+---
+title: Discord Integration
+description: Post winner announcements to Discord channels
+icon: message-circle
+---
+
+## Overview
+
+**Discord** is the final destination for Dream Foundry results. After selecting a winner, the winning artifact (a formatted Discord post) is published to a Discord channel via webhook, sharing AI events with your community.
+
+<Info>
+  Discord integration uses webhooks, which don't require a bot. Just create a webhook URL and you're ready to post.
+</Info>
+
+## Why Discord?
+
+Dream Foundry's demo use case is generating AI event posts for Discord:
+
+> "I want a bot that posts AI events to our Discord every week."
+
+The winning agent produces a markdown-formatted post with:
+- **10+ events** happening in the Bay Area
+- **Event details**: Date, location, type, URL
+- **Special emphasis** on the Daytona AI Hackathon
+- **Discord formatting**: Bold titles, emojis, clickable links
+
+## Setup and Configuration
+
+<Steps>
+  <Step title="Create Webhook">
+    In your Discord server:
+    1. Go to **Server Settings** → **Integrations** → **Webhooks**
+    2. Click **New Webhook**
+    3. Choose the target channel (e.g., `#ai-events`)
+    4. Copy the webhook URL
+  </Step>
+
+  <Step title="Configure Environment">
+    Add the webhook URL to `.env`:
+    
+    ```bash
+    DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/123456789/abcdefg
+    ```
+  </Step>
+
+  <Step title="Test Connection">
+    Verify the webhook works:
+    
+    ```bash
+    python -m src.discord_poster
+    ```
+    
+    This sends a test message to your channel.
+  </Step>
+</Steps>
+
+## How It Works
+
+### Webhook Validation
+
+The integration checks if Discord is properly configured:
+
+```python src/discord_poster.py
+def get_webhook_url() -> Optional[str]:
+    """Get Discord webhook URL from environment."""
+    url = os.getenv("DISCORD_WEBHOOK_URL")
+    if url and url.startswith("https://discord.com/api/webhooks/"):
+        return url
+    return None
+
+def is_discord_configured() -> bool:
+    """Check if Discord webhook is configured."""
+    return get_webhook_url() is not None
+```
+
+### Posting Messages
+
+Messages are sent via HTTP POST to the webhook URL:
+
+```python src/discord_poster.py
+def post_to_discord(
+    content: str,
+    username: str = "Dream Foundry",
+    avatar_url: Optional[str] = None,
+) -> tuple[bool, str]:
+    """Post content to Discord via webhook."""
+    webhook_url = get_webhook_url()
+    
+    if not webhook_url:
+        return False, "Discord webhook URL not configured"
+    
+    payload = {
+        "content": content,
+        "username": username,
+    }
+    
+    if avatar_url:
+        payload["avatar_url"] = avatar_url
+    
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    
+    if response.status_code not in [200, 204]:
+        return False, f"Discord API error: {response.status_code}"
+    
+    return True, "Posted to Discord"
+```
+
+### Message Splitting
+
+Discord has a 2000 character limit per message. Long posts are automatically split:
+
+```python src/discord_poster.py
+MAX_LENGTH = 1900  # Leave room for safety
+
+if len(content) <= MAX_LENGTH:
+    messages = [content]
+else:
+    # Split by event blocks (marked by **Title**)
+    blocks = content.split("\n**")
+    current_msg = ""
+    
+    for i, block in enumerate(blocks):
+        if i > 0:
+            block = "**" + block
+        
+        if len(current_msg) + len(block) + 1 <= MAX_LENGTH:
+            current_msg += ("\n" if current_msg else "") + block
+        else:
+            if current_msg:
+                messages.append(current_msg)
+            current_msg = block
+    
+    if current_msg:
+        messages.append(current_msg)
+```
+
+<Note>
+  Messages are split by event blocks to avoid breaking individual events across multiple messages.
+</Note>
+
+## Usage Examples
+
+### Basic Message
+
+Send a simple text message:
+
+```python
+from src.discord_poster import post_to_discord
+
+success, msg = post_to_discord("Hello from Dream Foundry!")
+if success:
+    print("Message sent!")
+else:
+    print(f"Failed: {msg}")
+```
+
+### Winner Announcement
+
+Post the winner's artifact:
+
+```python
+from src.discord_poster import post_winner_announcement
+
+success, msg = post_winner_announcement(
+    winner_id="gamma",
+    winner_score=94.4,
+    artifact_content=winner_artifact,
+    objective="Generate weekly AI events for Discord",
+)
+
+print(msg)  # "Posted to Discord (1 message)"
+```
+
+This creates a formatted announcement:
+
+```
+🏆 **DREAM FOUNDRY - Winner Announcement** 🏆
+
+**Objective:** Generate weekly AI events for Discord
+**Winner:** Agent Gamma (The Insider)
+**Score:** 94.4/100
+
+---
+
+[Winner's events list follows...]
+```
+
+### Custom Webhook Identity
+
+Customize the webhook's display name and avatar:
+
+```python
+from src.discord_poster import post_to_discord
+
+post_to_discord(
+    content="Competition results are in!",
+    username="AI Events Bot",
+    avatar_url="https://example.com/bot-avatar.png",
+)
+```
+
+## Discord Markdown Support
+
+Winner artifacts use Discord markdown formatting:
+
+<CodeGroup>
+
+```markdown Bold
+**Daytona HackSprint SF** → **Daytona HackSprint SF**
+```
+
+```markdown Links
+[Register](https://lu.ma/kga3qtfc) → Register (clickable)
+```
+
+```markdown Emojis
+🗓️ Date | 🎯 Event Type | 📍 Location
+```
+
+```markdown Code Blocks
+```
+Code snippet
+```
+```
+
+```markdown Lists
+- Item 1
+- Item 2
+- Item 3
+```
+
+</CodeGroup>
+
+### Example Formatted Event
+
+```markdown
+**Daytona HackSprint SF**
+🗓️ Saturday, January 24, 2026
+📍 San Francisco, CA
+🎯 Hackathon
+🔗 [Register](https://lu.ma/kga3qtfc)
+
+Build with Daytona's new AI dev platform! Compete for prizes and ship real products.
+
+---
+```
+
+## Rate Limiting
+
+Discord webhooks have rate limits:
+
+- **5 messages per 2 seconds** per webhook
+- **30 messages per minute** per webhook
+
+Dream Foundry handles this by adding delays between messages:
+
+```python src/discord_poster.py
+# Post each message
+for i, msg in enumerate(messages):
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    
+    # Small delay between messages to avoid rate limiting
+    if i < len(messages) - 1:
+        import time
+        time.sleep(0.5)
+```
+
+<Warning>
+  Sending too many messages too quickly results in `429 Too Many Requests` errors.
+</Warning>
+
+## Testing
+
+Test the Discord integration directly:
+
+```bash
+python -m src.discord_poster
+```
+
+This runs the test code at the bottom of the file:
+
+```python src/discord_poster.py
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    if is_discord_configured():
+        print("Discord is configured!")
+        success, msg = post_to_discord("🧪 Test message from Dream Foundry!")
+        print(f"Result: {success} - {msg}")
+    else:
+        print("Discord not configured. Add DISCORD_WEBHOOK_URL to .env")
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use meaningful webhook names">
+    Set a descriptive name when creating the webhook:
+    ```
+    Name: Dream Foundry Results
+    Channel: #ai-events
+    ```
+  </Step>
+
+  <Step title="Validate content length">
+    Check message length before posting:
+    ```python
+    if len(content) > 1900:
+        print(f"Warning: Long message ({len(content)} chars) will be split")
+    ```
+  </Step>
+
+  <Step title="Handle failures gracefully">
+    Always check the return tuple:
+    ```python
+    success, msg = post_to_discord(content)
+    if not success:
+        log(f"Discord post failed: {msg}")
+        # Fall back to logging or email
+    ```
+  </Step>
+
+  <Step title="Avoid spamming">
+    Add delays between multiple posts:
+    ```python
+    import time
+    for event in events:
+        post_to_discord(event)
+        time.sleep(1)  # 1 second delay
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Webhook URL Invalid
+
+**Error**: `Discord webhook URL not configured`
+
+**Solution**:
+- Verify URL starts with `https://discord.com/api/webhooks/`
+- Check `.env` file has correct URL
+- Ensure no extra spaces or quotes in `.env`
+
+### 404 Not Found
+
+**Error**: `Discord API error: 404`
+
+**Solution**:
+- Webhook may have been deleted
+- Recreate webhook in Discord server settings
+- Update `.env` with new URL
+
+### 401 Unauthorized
+
+**Error**: `Discord API error: 401`
+
+**Solution**:
+- Webhook token in URL is invalid
+- Generate a new webhook
+
+### 429 Rate Limited
+
+**Error**: `Discord API error: 429`
+
+**Solution**:
+- You're sending messages too quickly
+- Wait 60 seconds before retrying
+- Increase delay between messages (see `src/discord_poster.py:102`)
+
+### Messages Not Appearing
+
+**Problem**: No errors but messages don't show in Discord
+
+**Solutions**:
+1. Check you're in the correct channel
+2. Verify webhook is enabled (not deleted)
+3. Check Discord isn't filtering the webhook messages
+4. Test with a simple message: `post_to_discord("test")`
+
+## Security Considerations
+
+<Warning>
+  Webhook URLs are sensitive! Anyone with the URL can post to your channel.
+</Warning>
+
+### Protect Your Webhook
+
+1. **Never commit** webhook URLs to version control
+2. **Use `.env` files** and add `.env` to `.gitignore`
+3. **Rotate webhooks** if accidentally exposed
+4. **Limit permissions** - webhooks can only post, not read
+
+### Example `.gitignore`
+
+```gitignore
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Secrets
+*_secret*
+*_token*
+*_key*
+```
+
+## Related
+
+- [Agent Strategies](/concepts/agent-strategies)
+- [Five Phases](/concepts/five-phases)
+- [ElevenLabs Integration](/integrations/elevenlabs)

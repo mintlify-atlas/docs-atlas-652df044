@@ -1,0 +1,341 @@
+---
+title: CodeRabbit Integration
+description: AI-powered code review and automated PR polishing
+icon: rabbit
+---
+
+## Overview
+
+**CodeRabbit** provides AI-powered code review for the top-performing candidate agents. After the arena phase, the top 3 candidates advance to the podium where CodeRabbit analyzes their code and suggests improvements.
+
+<Info>
+  CodeRabbit integration is planned for Phase 4 (Dream Podium) but not yet implemented in the current version.
+</Info>
+
+## The Podium Phase
+
+After initial scoring in the arena, the top 3 agents advance to the **Dream Podium**:
+
+```
+┌─────────────┐
+│    THE      │
+│DREAM PODIUM │  
+│             │
+│ Polish code │
+│ with        │
+│ CodeRabbit  │
+└─────────────┘
+```
+
+### Process Flow
+
+<Steps>
+  <Step title="Top 3 Selection">
+    Arena scoring identifies the top 3 agents based on Success, Quality, and Speed.
+  </Step>
+
+  <Step title="Code Submission">
+    Each agent's code is submitted to CodeRabbit for review:
+    - Python source files
+    - Test files (if any)
+    - Configuration files
+  </Step>
+
+  <Step title="AI Review">
+    CodeRabbit analyzes code for:
+    - **Critical issues**: Security vulnerabilities, crashes
+    - **Major issues**: Logic errors, performance problems
+    - **Minor issues**: Code style, maintainability
+    - **Suggestions**: Best practices, optimizations
+  </Step>
+
+  <Step title="Auto-Apply Fixes">
+    Critical and major fixes are automatically applied:
+    ```python
+    if suggestion.severity in {"critical", "major"}:
+        apply_fix(suggestion)
+    ```
+  </Step>
+
+  <Step title="Re-run Tests">
+    Polished code is re-tested to ensure improvements don't break functionality.
+  </Step>
+
+  <Step title="Final Winner Selection">
+    After polishing, scores are recalculated. The highest scorer becomes the winner.
+  </Step>
+</Steps>
+
+## Planned API Integration
+
+When implemented, CodeRabbit integration will follow this design:
+
+### Submit for Review
+
+```python
+async def submit_for_review(candidate: dict) -> dict:
+    """
+    Submit candidate code to CodeRabbit for review.
+    """
+    response = await coderabbit_client.post("/reviews", json={
+        "files": [
+            {
+                "path": f"candidates/{candidate['id']}.py",
+                "content": read_file(candidate['script'])
+            }
+        ],
+        "context": f"Hackathon prototype for: {candidate['description']}",
+        "review_type": "full",
+        "language": "python"
+    })
+    return response
+```
+
+### Parse Review Results
+
+```python
+@dataclass
+class CodeRabbitSuggestion:
+    file: str
+    line: int
+    severity: Literal["critical", "major", "minor", "suggestion"]
+    message: str
+    suggested_fix: Optional[str]
+
+def parse_review(review_response: dict) -> list[CodeRabbitSuggestion]:
+    """Extract actionable suggestions from CodeRabbit review."""
+    suggestions = []
+    for comment in review_response.get("comments", []):
+        suggestions.append(CodeRabbitSuggestion(
+            file=comment["file"],
+            line=comment["line"],
+            severity=comment["severity"],
+            message=comment["message"],
+            suggested_fix=comment.get("suggested_fix")
+        ))
+    return suggestions
+```
+
+### Apply Fixes Automatically
+
+```python
+async def apply_fixes(
+    code_files: list[CodeFile],
+    suggestions: list[CodeRabbitSuggestion]
+) -> list[CodeFile]:
+    """
+    Apply suggested fixes from CodeRabbit.
+    Only apply 'critical' and 'major' fixes automatically.
+    """
+    auto_fix_severities = {"critical", "major"}
+
+    for suggestion in suggestions:
+        if suggestion.severity in auto_fix_severities and suggestion.suggested_fix:
+            file = next(f for f in code_files if f.path == suggestion.file)
+            file.content = apply_line_fix(
+                file.content,
+                suggestion.line,
+                suggestion.suggested_fix
+            )
+
+    return code_files
+```
+
+## Expected Improvements
+
+CodeRabbit is expected to catch common issues:
+
+### Agent Alpha (Speed Demon)
+
+**Before CodeRabbit:**
+```python candidates/agent_alpha.py
+# Missing error handling
+response = requests.get(url)
+events = response.json()  # Can crash if not JSON
+```
+
+**After CodeRabbit:**
+```python candidates/agent_alpha.py
+# Added error handling
+try:
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    events = response.json()
+except (requests.RequestException, ValueError) as e:
+    log(f"Error fetching events: {e}")
+    events = []
+```
+
+### Agent Beta (Perfectionist)
+
+**Before CodeRabbit:**
+```python candidates/agent_beta.py
+# Inefficient loop
+for event in all_events:
+    for existing in validated_events:
+        if event['url'] == existing['url']:
+            break  # O(n²) complexity
+```
+
+**After CodeRabbit:**
+```python candidates/agent_beta.py
+# Optimized with set
+seen_urls = {e['url'] for e in validated_events}
+for event in all_events:
+    if event['url'] not in seen_urls:  # O(n) complexity
+        validated_events.append(event)
+        seen_urls.add(event['url'])
+```
+
+### Agent Delta (Crasher)
+
+**Before CodeRabbit:**
+```python candidates/agent_delta.py
+# Intentional crash
+score = total_events / 0
+```
+
+**After CodeRabbit:**
+```python candidates/agent_delta.py
+# Fixed division by zero
+if total_events > 0:
+    score = total_events / max(1, valid_count)
+else:
+    score = 0.0
+```
+
+## Quality Scoring
+
+CodeRabbit findings contribute to a quality score:
+
+```python specs/INTEGRATIONS.md
+def calculate_code_quality_score(suggestions: list[CodeRabbitSuggestion]) -> float:
+    """
+    Score from 0-100 based on review findings.
+    Fewer/less severe issues = higher score.
+    """
+    severity_weights = {
+        "critical": 20,
+        "major": 10,
+        "minor": 3,
+        "suggestion": 1
+    }
+    total_impact = sum(severity_weights[s.severity] for s in suggestions)
+    return max(0, 100 - min(total_impact, 100))
+```
+
+### Example Scores
+
+| Agent | Critical | Major | Minor | Suggestions | Quality Score |
+|-------|----------|-------|-------|-------------|---------------|
+| Alpha | 0 | 2 | 5 | 3 | 68/100 |
+| Beta | 0 | 0 | 8 | 12 | 64/100 |
+| Gamma | 0 | 1 | 2 | 5 | 79/100 |
+
+## PR Creation
+
+After polishing, the winner's code is published as a GitHub PR:
+
+```python
+# Create branch with polished code
+git checkout -b polished-{winner_id}
+git add candidates/{winner_id}.py
+git commit -m "feat: Polished {winner_name} by CodeRabbit"
+git push origin polished-{winner_id}
+
+# Create PR via GitHub CLI
+gh pr create \
+  --title "[Dream Foundry] {winner_name} - Winner" \
+  --body "CodeRabbit-polished implementation"
+```
+
+<Note>
+  CodeRabbit can automatically review the PR once created, providing additional feedback.
+</Note>
+
+## Setup (When Implemented)
+
+<Steps>
+  <Step title="Install CodeRabbit GitHub App">
+    Go to [coderabbit.ai](https://coderabbit.ai) and install the GitHub App on your repository.
+  </Step>
+
+  <Step title="Get API Token">
+    Generate an API token from CodeRabbit settings.
+  </Step>
+
+  <Step title="Configure Environment">
+    ```bash
+    CODERABBIT_TOKEN=your_coderabbit_token
+    ```
+  </Step>
+
+  <Step title="Enable Auto-Review">
+    Configure CodeRabbit to review PRs automatically:
+    
+    ```yaml .coderabbit.yaml
+    reviews:
+      auto_review: true
+      profile: strict
+      request_changes_workflow: true
+    ```
+  </Step>
+</Steps>
+
+## Current Status
+
+<Warning>
+  CodeRabbit integration is **planned but not yet implemented**. Current version (v1.0) skips the podium phase and selects winners directly from arena scores.
+</Warning>
+
+### What Works Today
+
+- ✅ Top 3 agent selection
+- ✅ Winner announcement
+- ✅ Artifact generation
+
+### What's Coming
+
+- ⏳ CodeRabbit API integration
+- ⏳ Automated code polishing
+- ⏳ PR creation with polished code
+- ⏳ Before/after diff visualization
+- ⏳ Re-scoring after polish
+
+## Workarounds
+
+Until CodeRabbit integration is complete, you can manually review agent code:
+
+### Manual Review
+
+1. Identify top 3 agents from `artifacts/scores.json`
+2. Review their code in `candidates/`
+3. Create PRs manually with improvements
+4. Use CodeRabbit's PR review feature on those PRs
+
+### GitHub Actions Integration
+
+Add CodeRabbit to your CI pipeline:
+
+```yaml .github/workflows/coderabbit.yml
+name: CodeRabbit Review
+
+on:
+  pull_request:
+    paths:
+      - 'candidates/**'
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: coderabbitai/coderabbit-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## Related
+
+- [Five Phases](/concepts/five-phases)
+- [Agent Strategies](/concepts/agent-strategies)
+- [Scoring System](/concepts/scoring-system)

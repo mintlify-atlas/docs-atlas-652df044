@@ -1,0 +1,592 @@
+---
+title: Installation
+description: Complete setup guide for Dream Foundry with all integrations
+---
+
+This guide covers the complete installation of Dream Foundry, including all sponsor integrations (Daytona, Sentry, CodeRabbit, ElevenLabs) and environment configuration.
+
+## Prerequisites
+
+<Steps>
+
+<Step title="Python 3.12 or higher">
+Verify your Python version:
+
+```bash
+python --version
+# Output: Python 3.12.0 or higher
+```
+
+If you need to install Python 3.12:
+
+<CodeGroup>
+```bash macOS (Homebrew)
+brew install python@3.12
+```
+
+```bash Ubuntu/Debian
+sudo apt update
+sudo apt install python3.12 python3.12-venv python3-pip
+```
+
+```bash Windows (Chocolatey)
+choco install python --version=3.12.0
+```
+</CodeGroup>
+</Step>
+
+<Step title="Git">
+```bash
+git --version
+# Should return git version 2.x or higher
+```
+</Step>
+
+<Step title="Virtual Environment (Recommended)">
+Create an isolated Python environment:
+
+```bash
+python -m venv venv
+
+# Activate the environment
+source venv/bin/activate  # macOS/Linux
+venv\Scripts\activate     # Windows
+```
+
+<Note>
+Using a virtual environment prevents dependency conflicts with other Python projects.
+</Note>
+</Step>
+
+</Steps>
+
+## Installation
+
+<Steps>
+
+<Step title="Clone the repository">
+```bash
+git clone <repository-url>
+cd dream-foundry
+```
+</Step>
+
+<Step title="Install Python dependencies">
+```bash
+pip install -r requirements.txt
+```
+
+This installs all required packages:
+
+<AccordionGroup>
+  <Accordion title="Core Dependencies">
+    ```txt
+    python-dotenv>=1.0.0    # Environment variables
+    pydantic>=2.0.0         # Data validation
+    httpx>=0.25.0           # Async HTTP client
+    aiohttp>=3.9.0          # Async I/O
+    requests>=2.31.0        # HTTP requests
+    ```
+  </Accordion>
+  
+  <Accordion title="UI & CLI">
+    ```txt
+    streamlit>=1.30.0       # Demo web UI
+    typer>=0.9.0            # CLI framework
+    rich>=13.0.0            # Terminal formatting
+    ```
+  </Accordion>
+  
+  <Accordion title="Web Scraping (for agents)">
+    ```txt
+    beautifulsoup4>=4.12.0  # HTML parsing
+    lxml>=5.0.0             # XML/HTML parser
+    selenium>=4.16.0        # Browser automation
+    feedparser>=6.0.0       # RSS/Atom feeds
+    ```
+  </Accordion>
+  
+  <Accordion title="Integrations">
+    ```txt
+    sentry-sdk>=1.39.0      # Error monitoring
+    ```
+  </Accordion>
+  
+  <Accordion title="Testing & Utils">
+    ```txt
+    pytest>=8.0.0
+    pytest-asyncio>=0.23.0
+    pytest-json-report>=1.5.0
+    tenacity>=8.2.0         # Retry logic
+    python-dateutil>=2.8.0  # Date parsing
+    ```
+  </Accordion>
+</AccordionGroup>
+</Step>
+
+<Step title="Verify installation">
+Run a quick test to ensure all imports work:
+
+```bash
+python -c "import streamlit, bs4, selenium, sentry_sdk; print('✅ All dependencies installed')"
+```
+</Step>
+
+</Steps>
+
+## Environment Configuration
+
+Dream Foundry supports multiple execution modes depending on which API keys you configure.
+
+### Basic Setup (No API Keys)
+
+For local testing, **no API keys are required**. The forge runs in local mode:
+- ✅ All 5 agents execute
+- ✅ Scoring and winner selection
+- ✅ Artifact generation
+- ❌ No Daytona sandboxes (runs locally)
+- ❌ No Sentry error tracking
+- ❌ No Discord publishing
+- ❌ No ElevenLabs narration
+
+### Full Setup (All Integrations)
+
+<Steps>
+
+<Step title="Create environment file">
+```bash
+touch .env
+```
+
+Open `.env` in your text editor and add the following:
+
+```bash .env
+# Daytona - Isolated sandbox execution
+DAYTONA_API_KEY=your_daytona_api_key_here
+
+# Sentry - Error monitoring and alerting
+SENTRY_DSN=https://your_sentry_dsn@sentry.io/project_id
+
+# Discord - Publish winner announcements
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url
+
+# ElevenLabs - Winner narration and voice synthesis
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+```
+</Step>
+
+<Step title="Get Daytona API Key">
+**Purpose**: Run each agent in isolated sandboxes for true parallel execution and security.
+
+1. Sign up at [daytona.io](https://daytona.io)
+2. Navigate to Settings → API Keys
+3. Generate a new API key
+4. Copy the key to your `.env` file
+
+**Verify**:
+```bash
+python forge.py --daytona "Test objective"
+```
+
+You should see:
+```bash
+Execution: DAYTONA
+```
+
+<Warning>
+Without `DAYTONA_API_KEY`, the `--daytona` flag automatically falls back to local execution.
+</Warning>
+</Step>
+
+<Step title="Get Sentry DSN">
+**Purpose**: Capture and monitor agent failures in real-time (especially Agent Delta crashes).
+
+1. Sign up at [sentry.io](https://sentry.io)
+2. Create a new project (select Python)
+3. Copy the DSN from the project settings
+4. Add to `.env` as `SENTRY_DSN`
+
+**Verify**:
+```python
+python -c "import sentry_sdk, os; from dotenv import load_dotenv; load_dotenv(); sentry_sdk.init(dsn=os.getenv('SENTRY_DSN')); sentry_sdk.capture_message('Test from Dream Foundry'); print('✅ Sentry configured')"
+```
+
+Check your Sentry dashboard for the test event.
+
+<Info>
+**Integration Point**: In `forge.py:175-182`, when a candidate fails, the error is automatically captured:
+
+```python forge.py
+try:
+    import sentry_sdk
+    sentry_sdk.capture_message(
+        f"Candidate {candidate_id} failed: {error_message[:200]}",
+        level="error"
+    )
+except:
+    pass
+```
+</Info>
+</Step>
+
+<Step title="Get Discord Webhook URL">
+**Purpose**: Publish the winner's output directly to a Discord channel.
+
+1. Open your Discord server
+2. Go to Server Settings → Integrations → Webhooks
+3. Click "New Webhook"
+4. Name it "Dream Foundry Winner"
+5. Select the target channel
+6. Copy the webhook URL
+7. Add to `.env` as `DISCORD_WEBHOOK_URL`
+
+**Verify**:
+```bash
+python -c "import os, requests; from dotenv import load_dotenv; load_dotenv(); requests.post(os.getenv('DISCORD_WEBHOOK_URL'), json={'content': '✅ Dream Foundry webhook test'})"
+```
+
+You should see a message in your Discord channel.
+
+<Info>
+**Integration Point**: After the winner is selected, you can publish to Discord:
+
+```python src/discord_poster.py
+def post_winner_announcement(
+    winner_id: str,
+    winner_score: float,
+    artifact_content: str,
+    objective: str
+) -> tuple[bool, str]:
+    """Post winner to Discord via webhook."""
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    # ... formatting and posting logic
+```
+</Info>
+</Step>
+
+<Step title="Get ElevenLabs API Key">
+**Purpose**: Generate voice narration for winner announcements in the Streamlit UI.
+
+1. Sign up at [elevenlabs.io](https://elevenlabs.io)
+2. Navigate to Profile → API Keys
+3. Generate a new API key
+4. Add to `.env` as `ELEVENLABS_API_KEY`
+
+**Verify**:
+```bash
+streamlit run app.py
+```
+
+Navigate through the demo to Phase 9 (Showcase). You should see an "Generate & Play Audio" button.
+
+<Note>
+ElevenLabs is **only used in the Streamlit UI** for presentation purposes. The CLI (`forge.py`) does not use voice synthesis.
+</Note>
+</Step>
+
+</Steps>
+
+## Configuration Levels
+
+You can configure Dream Foundry at different levels:
+
+<CardGroup cols={3}>
+  <Card title="Minimal" icon="rabbit">
+    **No API Keys**
+    
+    Perfect for:
+    - Local testing
+    - Understanding the flow
+    - Developing custom agents
+    
+    ```bash
+    python forge.py
+    ```
+  </Card>
+  
+  <Card title="Standard" icon="gauge">
+    **Daytona + Sentry**
+    
+    Perfect for:
+    - Production usage
+    - Isolated execution
+    - Error monitoring
+    
+    ```bash .env
+    DAYTONA_API_KEY=...
+    SENTRY_DSN=...
+    ```
+  </Card>
+  
+  <Card title="Full Demo" icon="stars">
+    **All Integrations**
+    
+    Perfect for:
+    - Hackathon demos
+    - Presentations
+    - Full feature showcase
+    
+    ```bash .env
+    DAYTONA_API_KEY=...
+    SENTRY_DSN=...
+    DISCORD_WEBHOOK_URL=...
+    ELEVENLABS_API_KEY=...
+    ```
+  </Card>
+</CardGroup>
+
+## Additional Setup (Optional)
+
+### Selenium WebDriver (for Agent Beta)
+
+Agent Beta uses Selenium for JavaScript-rendered pages. Install a browser driver:
+
+<CodeGroup>
+```bash Chrome (Recommended)
+# macOS
+brew install chromedriver
+
+# Ubuntu/Debian
+sudo apt install chromium-chromedriver
+
+# Windows
+choco install chromedriver
+```
+
+```bash Firefox
+# macOS
+brew install geckodriver
+
+# Ubuntu/Debian
+sudo apt install firefox-geckodriver
+
+# Windows
+choco install selenium-gecko-driver
+```
+</CodeGroup>
+
+**Verify**:
+```bash
+chroniumdriver --version
+# Should output version number
+```
+
+<Note>
+If you skip this step, Agent Beta will fail gracefully and be scored accordingly. The forge will still complete with the other 4 agents.
+</Note>
+
+### CodeRabbit Integration (Advanced)
+
+CodeRabbit is **simulated in the Streamlit UI** for demo purposes. To integrate real CodeRabbit PR reviews:
+
+1. Install the [CodeRabbit GitHub App](https://coderabbit.ai)
+2. Grant access to your Dream Foundry repository
+3. Create a PR from the winner's branch
+4. CodeRabbit will automatically review
+
+<Info>
+The Streamlit UI (Phase 6: Forge Runoff - Polish) shows **example before/after diffs** to demonstrate the concept. Real CodeRabbit reviews require GitHub integration.
+</Info>
+
+## Verification
+
+Run the complete test suite to verify everything works:
+
+```bash
+python forge.py --daytona
+```
+
+Expected output:
+
+<Steps>
+
+<Step title="Environment Check">
+```bash
+DREAM FOUNDRY - Forge Loop
+============================================================
+Objective: Generate weekly 'AI Events in San Francisco' post for Discord
+Candidates: 5
+Execution: DAYTONA  ✅
+[Sentry] Initialized  ✅
+```
+</Step>
+
+<Step title="Candidate Execution">
+```bash
+PHASE: Running Candidates
+----------------------------------------
+[Agent Alpha] Starting...
+[Agent Alpha] Done (4.2s)
+
+[Agent Beta] Starting...
+[Agent Beta] Done (28.5s)
+
+[Agent Gamma] Starting...
+[Gamma] Verified: Daytona HackSprint SF
+[Gamma] Found 10 verified events
+[Agent Gamma] Done (3.1s)
+
+[Agent Delta] Starting...
+[Error] Timeout after 60 seconds
+[Sentry] Error captured  ✅
+
+[Agent Epsilon] Starting...
+[Agent Epsilon] Done (2.8s)
+```
+</Step>
+
+<Step title="Scoring & Winner">
+```bash
+============================================================
+PHASE: Scoring
+----------------------------------------
+Candidate     Success  Quality    Speed    TOTAL
+----------------------------------------------
+gamma        PASS     94.4       89.7     94.4  🏆
+beta         PASS     91.5       5.0      61.9
+epsilon      PASS     54.5       90.7     63.1
+alpha        PASS     75.6       86.0     77.2
+delta        FAIL     0.0        0.0      0.0
+
+============================================================
+WINNER: gamma (score: 94.4)
+============================================================
+```
+</Step>
+
+<Step title="Artifacts">
+```bash
+Artifacts produced:
+  - artifacts/alpha/discord_post.md [exists]
+  - artifacts/beta/discord_post.md [exists]
+  - artifacts/gamma/discord_post.md [exists]  🏆
+  - artifacts/delta/discord_post.md [missing]
+  - artifacts/epsilon/discord_post.md [exists]
+  - artifacts/scores.json
+  - artifacts/winner.txt
+```
+</Step>
+
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="ModuleNotFoundError: No module named 'streamlit'">
+    You're likely not in the virtual environment or didn't install dependencies:
+    
+    ```bash
+    # Activate virtual environment
+    source venv/bin/activate  # macOS/Linux
+    venv\Scripts\activate     # Windows
+    
+    # Reinstall dependencies
+    pip install -r requirements.txt
+    ```
+  </Accordion>
+  
+  <Accordion title="Daytona not configured, falling back to local">
+    This means `DAYTONA_API_KEY` is not set or invalid:
+    
+    ```bash
+    # Check .env file exists
+    cat .env | grep DAYTONA
+    
+    # Verify the key is correct (should start with 'dtna_')
+    # Re-generate key from daytona.io if needed
+    ```
+  </Accordion>
+  
+  <Accordion title="Sentry events not appearing">
+    Common issues:
+    
+    1. **Wrong DSN format**: Should be `https://...@sentry.io/...`
+    2. **Project not configured**: Create a new Python project in Sentry
+    3. **Firewall blocking**: Ensure outbound HTTPS to sentry.io is allowed
+    
+    Test manually:
+    ```python
+    python -c "import sentry_sdk; sentry_sdk.init(dsn='YOUR_DSN'); sentry_sdk.capture_message('test'); import time; time.sleep(2)"
+    ```
+  </Accordion>
+  
+  <Accordion title="Discord webhook returning 404">
+    The webhook URL expired or was deleted:
+    
+    1. Go back to Discord Server Settings → Integrations → Webhooks
+    2. Verify the webhook still exists
+    3. Copy a fresh URL if needed
+    4. Update `.env`
+    
+    Test:
+    ```bash
+    curl -X POST "YOUR_WEBHOOK_URL" -H "Content-Type: application/json" -d '{"content": "test"}'
+    ```
+  </Accordion>
+  
+  <Accordion title="Selenium WebDriverException">
+    ChromeDriver not installed or wrong version:
+    
+    ```bash
+    # Check Chrome version
+    google-chrome --version
+    
+    # Install matching ChromeDriver
+    brew install chromedriver  # macOS
+    
+    # Or download from:
+    # https://chromedriver.chromium.org/downloads
+    ```
+    
+    Alternatively, Agent Beta will fail gracefully. The forge continues with other agents.
+  </Accordion>
+  
+  <Accordion title="Rate limiting from lu.ma / Meetup">
+    Running the forge repeatedly triggers rate limits:
+    
+    - **Solution 1**: Wait 5 minutes between runs
+    - **Solution 2**: Use `--daytona` flag to isolate requests
+    - **Solution 3**: Implement custom caching (see `candidates/agent_gamma.py:26-52` for event list)
+  </Accordion>
+  
+  <Accordion title="Python version mismatch">
+    Dream Foundry requires Python 3.12+ for modern type hints:
+    
+    ```bash
+    python --version
+    # If < 3.12, install Python 3.12:
+    
+    # macOS
+    brew install python@3.12
+    
+    # Create new venv with correct version
+    python3.12 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run your first forge in 5 minutes
+  </Card>
+  
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand the 5-phase Dream Foundry pipeline
+  </Card>
+  
+  <Card title="Custom Agents" icon="code" href="/guides/creating-agents">
+    Build your own competing agent
+  </Card>
+  
+  <Card title="Scoring System" icon="chart-line" href="/concepts/scoring-system">
+    Deep dive into the scoring rubric
+  </Card>
+</CardGroup>
+
+<Info>
+**Pro Tip**: Start with the minimal setup (no API keys) to understand the flow, then progressively add integrations as needed.
+</Info>

@@ -1,0 +1,314 @@
+---
+title: Daytona Integration
+description: Execute candidate agents in isolated sandboxes using Daytona
+icon: cube
+---
+
+## Overview
+
+Dream Foundry uses **Daytona** to run each candidate agent in isolated sandboxes, ensuring fair competition and preventing interference between agents. Each agent gets its own clean environment with predictable resources and execution constraints.
+
+<Info>
+  Daytona sandboxes provide isolation similar to containers but with simplified management through the Daytona SDK.
+</Info>
+
+## Why Daytona?
+
+Running multiple AI agents locally creates several challenges:
+
+- **Interference**: Agents might share state or resources
+- **Resource conflicts**: One slow agent can block others
+- **Environment differences**: Local vs production discrepancies
+- **Cleanup complexity**: Managing temporary files and processes
+
+Daytona solves these by giving each agent a fresh, isolated workspace that is automatically cleaned up after execution.
+
+## Setup and Configuration
+
+<Steps>
+  <Step title="Install Daytona SDK">
+    The Daytona SDK is included in Dream Foundry's requirements:
+    
+    ```bash
+    pip install daytona-sdk
+    ```
+  </Step>
+
+  <Step title="Get API Key">
+    Obtain your Daytona API key from the [Daytona Dashboard](https://daytona.io/dashboard).
+  </Step>
+
+  <Step title="Configure Environment">
+    Add your credentials to `.env`:
+    
+    ```bash
+    DAYTONA_API_KEY=your_api_key_here
+    DAYTONA_BASE_URL=https://api.daytona.io/v1  # Optional, this is the default
+    ```
+  </Step>
+
+  <Step title="Verify Configuration">
+    Check if Daytona is properly configured:
+    
+    ```python
+    from src.daytona_runner import is_daytona_configured
+    
+    if is_daytona_configured():
+        print("Daytona is ready!")
+    ```
+  </Step>
+</Steps>
+
+## How It Works
+
+The Daytona integration follows a five-step workflow for each candidate agent:
+
+### 1. Create Sandbox
+
+When a candidate needs to run, Dream Foundry creates a fresh Daytona sandbox:
+
+```python src/daytona_runner.py
+config = DaytonaConfig(api_key=api_key)
+daytona = Daytona(config)
+
+# Create sandbox
+sandbox = daytona.create()
+sandbox_id = sandbox.id
+```
+
+### 2. Upload Script
+
+The candidate's Python script is base64-encoded and written to the sandbox:
+
+```python src/daytona_runner.py
+import base64
+
+script_content = Path(script_path).read_text()
+script_b64 = base64.b64encode(script_content.encode()).decode()
+
+# Write to sandbox
+sandbox_script_path = f"/home/daytona/{candidate_id}.py"
+write_cmd = f"echo '{script_b64}' | base64 -d > {sandbox_script_path}"
+sandbox.process.exec(write_cmd, timeout=30)
+```
+
+<Note>
+  Base64 encoding ensures special characters and multi-line scripts are safely transferred.
+</Note>
+
+### 3. Execute Script
+
+The script runs with the objective and output path as arguments:
+
+```python src/daytona_runner.py
+escaped_objective = objective.replace("'", "'\\''")  
+cmd = f"python3 {sandbox_script_path} '{escaped_objective}' {sandbox_output}"
+result = sandbox.process.exec(cmd, timeout=60)
+```
+
+### 4. Retrieve Artifacts
+
+After execution, the output artifact is retrieved from the sandbox:
+
+```python src/daytona_runner.py
+cat_result = sandbox.process.exec(f"cat {sandbox_output}", timeout=10)
+if cat_result.exit_code == 0:
+    artifact_content = cat_result.result
+```
+
+### 5. Cleanup
+
+Finally, the sandbox is deleted automatically:
+
+```python src/daytona_runner.py
+try:
+    daytona.delete(sandbox)
+except Exception as e:
+    log(f"Cleanup warning: {e}")
+```
+
+## Running Agents in Daytona
+
+There are two ways to run agents with Daytona:
+
+### CLI Mode
+
+Use the `--daytona` flag to force Daytona execution:
+
+```bash
+python forge.py --daytona "Generate weekly AI events for Discord"
+```
+
+### Programmatic API
+
+Run a single candidate in Daytona:
+
+```python
+from src.daytona_runner import run_candidate_in_daytona
+
+result = run_candidate_in_daytona(
+    candidate_id="alpha",
+    script_path="candidates/agent_alpha.py",
+    objective="Generate AI events",
+    output_file="output.md",
+)
+
+print(f"Success: {result.success}")
+print(f"Runtime: {result.runtime_seconds:.1f}s")
+print(f"Output: {result.artifact_content}")
+```
+
+Run all candidates in parallel:
+
+```python
+from src.daytona_runner import run_all_candidates_in_daytona
+from pathlib import Path
+
+candidates = [
+    {"id": "alpha", "script": "candidates/agent_alpha.py"},
+    {"id": "beta", "script": "candidates/agent_beta.py"},
+    {"id": "gamma", "script": "candidates/agent_gamma.py"},
+]
+
+results = run_all_candidates_in_daytona(
+    candidates=candidates,
+    objective="Generate AI events",
+    artifacts_dir=Path("artifacts"),
+)
+
+for result in results:
+    print(f"{result.candidate_id}: {result.success}")
+```
+
+## Result Object
+
+Each Daytona execution returns a `DaytonaResult` object:
+
+```python src/daytona_runner.py
+@dataclass
+class DaytonaResult:
+    candidate_id: str              # Which agent ran
+    sandbox_id: Optional[str]      # Daytona sandbox ID
+    success: bool                   # True if exit code 0 and artifact exists
+    output: str                     # stdout/stderr from execution
+    artifact_content: Optional[str] # Content of output file
+    runtime_seconds: float          # Total execution time
+    error_message: Optional[str]    # Error details if failed
+```
+
+## Fallback to Local Execution
+
+If Daytona is not configured, Dream Foundry automatically falls back to local execution:
+
+```python forge.py
+daytona_available = is_daytona_configured()
+execution_mode = "daytona" if (use_daytona and daytona_available) else "local"
+
+if use_daytona and not daytona_available:
+    print("Daytona not configured, falling back to local")
+```
+
+<Warning>
+  Local execution doesn't provide the same isolation guarantees as Daytona sandboxes.
+</Warning>
+
+## Troubleshooting
+
+### API Key Not Found
+
+**Error**: `Daytona API key not configured`
+
+**Solution**: 
+- Check that `DAYTONA_API_KEY` is set in your `.env` file
+- Ensure the key doesn't start with `your_` (placeholder value)
+- Verify the key is valid at [Daytona Dashboard](https://daytona.io/dashboard)
+
+### SDK Not Installed
+
+**Error**: `Daytona SDK not installed`
+
+**Solution**:
+```bash
+pip install daytona-sdk
+```
+
+### Timeout Errors
+
+**Error**: Sandbox operations timing out
+
+**Solution**: 
+- Check your network connection
+- Verify Daytona API is accessible
+- Consider increasing timeout values in `src/daytona_runner.py:147` and `src/daytona_runner.py:154`
+
+### Cleanup Failures
+
+**Warning**: `Cleanup failed: ...`
+
+**Impact**: Sandbox may remain allocated in your Daytona account.
+
+**Solution**: Manually delete orphaned sandboxes via the Daytona Dashboard or API.
+
+## Performance Characteristics
+
+### Overhead
+
+- **Sandbox creation**: ~2-5 seconds
+- **Script upload**: Less than 1 second  
+- **Execution**: Depends on agent (5-30 seconds typical)
+- **Artifact retrieval**: Less than 1 second
+- **Cleanup**: ~1-2 seconds
+
+**Total overhead**: ~4-8 seconds per agent
+
+### Parallelization
+
+Daytona sandboxes run independently, enabling true parallel execution:
+
+```python
+# All 5 agents run simultaneously
+results = run_all_candidates_in_daytona(candidates, objective, artifacts_dir)
+```
+
+This is much faster than sequential local execution.
+
+## Best Practices
+
+<Steps>
+  <Step title="Always provide timeouts">
+    Set reasonable timeouts to prevent hanging sandboxes:
+    
+    ```python
+    sandbox.process.exec(cmd, timeout=60)
+    ```
+  </Step>
+
+  <Step title="Handle cleanup failures gracefully">
+    Cleanup failures shouldn't crash your application:
+    
+    ```python
+    try:
+        daytona.delete(sandbox)
+    except Exception as e:
+        log(f"Cleanup warning: {e}")
+    ```
+  </Step>
+
+  <Step title="Use descriptive sandbox names">
+    Include candidate ID and timestamp for debugging:
+    
+    ```python
+    sandbox_name = f"forge-{candidate_id}-{timestamp}"
+    ```
+  </Step>
+
+  <Step title="Monitor resource usage">
+    Check your Daytona dashboard for active sandboxes and resource consumption.
+  </Step>
+</Steps>
+
+## Related
+
+- [Sandbox Execution Guide](/guides/sandbox-execution)
+- [Running the Forge](/guides/running-forge)
+- [Scoring System](/concepts/scoring-system)

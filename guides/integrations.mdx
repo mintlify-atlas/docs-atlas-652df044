@@ -1,0 +1,640 @@
+---
+title: Integrations
+description: Overview of all Dream Foundry integrations including Daytona, Sentry, CodeRabbit, and ElevenLabs
+---
+
+Dream Foundry integrates with four key platforms to enable the complete forge-to-showcase workflow.
+
+## Integration Overview
+
+<CardGroup cols={2}>
+  <Card title="Daytona" icon="box" href="#daytona">
+    Isolated sandbox environments for agent execution
+  </Card>
+  <Card title="Sentry" icon="bug" href="#sentry">
+    Error monitoring and performance tracking
+  </Card>
+  <Card title="CodeRabbit" icon="rabbit" href="#coderabbit">
+    AI-powered code review and polishing
+  </Card>
+  <Card title="ElevenLabs" icon="microphone" href="#elevenlabs">
+    Voice synthesis for winner announcements
+  </Card>
+</CardGroup>
+
+## Daytona
+
+### Purpose
+
+Daytona provides sandboxed development environments for building and testing each candidate approach in isolation.
+
+### Setup
+
+<Steps>
+  <Step title="Get your API key">
+    Sign up at [daytona.io](https://daytona.io) and get your API key
+  </Step>
+  
+  <Step title="Add to environment">
+    ```bash
+    # .env
+    DAYTONA_API_KEY=your_daytona_api_key_here
+    DAYTONA_BASE_URL=https://api.daytona.io/v1  # Optional
+    ```
+  </Step>
+  
+  <Step title="Install SDK">
+    ```bash
+    pip install daytona-sdk
+    # or
+    pip install daytona
+    ```
+  </Step>
+  
+  <Step title="Verify configuration">
+    ```python
+    from src.daytona_runner import is_daytona_configured
+    print(is_daytona_configured())  # Should print True
+    ```
+  </Step>
+</Steps>
+
+### Usage in Forge
+
+Run agents in Daytona sandboxes:
+
+```bash
+python forge.py --daytona
+```
+
+Or programmatically:
+
+```python
+from forge import run_forge
+
+result = run_forge(
+    objective="Generate weekly AI events",
+    use_daytona=True
+)
+```
+
+### Key Operations
+
+#### Create Sandbox
+
+```python
+# From daytona_runner.py:124-133
+config = DaytonaConfig(api_key=api_key)
+daytona = Daytona(config)
+
+sandbox = daytona.create()
+sandbox_id = sandbox.id if hasattr(sandbox, 'id') else str(sandbox)
+```
+
+#### Execute in Sandbox
+
+```python
+# From daytona_runner.py:150-154
+cmd = f"python3 {sandbox_script_path} '{escaped_objective}' {sandbox_output}"
+result = sandbox.process.exec(cmd, timeout=60)
+
+output = result.result if hasattr(result, 'result') else str(result)
+exit_code = result.exit_code if hasattr(result, 'exit_code') else 0
+```
+
+#### Cleanup
+
+```python
+# From daytona_runner.py:204-207
+if sandbox:
+    try:
+        daytona.delete(sandbox)
+    except Exception as e:
+        log(f"[Warn] Cleanup failed: {e}")
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DAYTONA_API_KEY` | None | API authentication key (required) |
+| `DAYTONA_BASE_URL` | `https://api.daytona.io/v1` | API endpoint |
+
+<Note>
+See the [Sandbox Execution](/guides/sandbox-execution) guide for detailed information.
+</Note>
+
+---
+
+## Sentry
+
+### Purpose
+
+Monitor errors and performance during the Forge phase to track candidate stability and capture runtime issues.
+
+### Setup
+
+<Steps>
+  <Step title="Create Sentry project">
+    Sign up at [sentry.io](https://sentry.io) and create a project
+  </Step>
+  
+  <Step title="Add DSN to environment">
+    ```bash
+    # .env
+    SENTRY_DSN=https://xxx@sentry.io/xxx
+    ```
+  </Step>
+  
+  <Step title="Install SDK">
+    ```bash
+    pip install sentry-sdk
+    ```
+  </Step>
+</Steps>
+
+### Initialization
+
+```python
+# From forge.py:56-69
+def init_sentry():
+    global _sentry_initialized
+    if _sentry_initialized:
+        return True
+    try:
+        import sentry_sdk
+        sentry_dsn = os.getenv("SENTRY_DSN")
+        if sentry_dsn and not sentry_dsn.startswith("https://your"):
+            sentry_sdk.init(dsn=sentry_dsn, traces_sample_rate=1.0)
+            _sentry_initialized = True
+            return True
+    except ImportError:
+        pass
+    return False
+```
+
+Sentry is automatically initialized when the forge starts:
+
+```python
+# From forge.py:424-426
+if init_sentry():
+    print("[Sentry] Initialized")
+```
+
+### Error Capture
+
+When a candidate fails, the error is sent to Sentry:
+
+```python
+# From forge.py:169-182
+if result.returncode != 0:
+    error_occurred = True
+    error_message = result.stderr[:500] if result.stderr else f"Exit code {result.returncode}"
+    log(f"[Error] {error_message[:80]}")
+
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(
+            f"Candidate {candidate_id} failed: {error_message[:200]}",
+            level="error"
+        )
+        log("[Sentry] Error captured")
+    except:
+        pass
+```
+
+### Viewing Errors
+
+Errors appear in your Sentry dashboard with:
+- Candidate ID in the message
+- Stack trace (if available)
+- Execution context
+- Timestamp
+
+### Configuration
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SENTRY_DSN` | Yes | Project DSN from Sentry dashboard |
+
+<Warning>
+Do not commit your Sentry DSN to version control. Use environment variables or `.env` files.
+</Warning>
+
+---
+
+## CodeRabbit
+
+### Purpose
+
+AI-powered code review to polish the top 3 candidates before final selection in the Podium phase.
+
+### Setup
+
+<Steps>
+  <Step title="Get CodeRabbit token">
+    Sign up at [coderabbit.ai](https://coderabbit.ai) and generate an API token
+  </Step>
+  
+  <Step title="Add to environment">
+    ```bash
+    # .env
+    CODERABBIT_TOKEN=your_coderabbit_token_here
+    ```
+  </Step>
+</Steps>
+
+### Integration Flow
+
+CodeRabbit integration is showcased in the Streamlit UI (Phase 6: Forge Runoff):
+
+<Steps>
+  <Step title="Polish phase begins">
+    ```python
+    # From app.py:400-403
+    st.markdown("## 🔥 Forge Runoff - Step 1")
+    st.markdown("*CodeRabbit polishes each candidate's code*")
+    ```
+  </Step>
+  
+  <Step title="Show before/after diffs">
+    ```python
+    # From app.py:405-420
+    st.markdown("### 🔗 Agent Gamma - Polishing...")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**BEFORE**")
+        st.code('''try:
+        response = await fetch()
+    except:
+        pass''', language="python")
+    with col2:
+        st.markdown("**AFTER**")
+        st.code('''try:
+        response = await fetch()
+    except httpx.HTTPError as e:
+        logger.error(f"API error: {e}")
+        raise''', language="python")
+    ```
+  </Step>
+  
+  <Step title="Re-run tests">
+    ```python
+    # From app.py:476-477
+    st.markdown("## 🔥 Forge Runoff - Step 2")
+    st.markdown("*Re-running same tests on polished code*")
+    ```
+  </Step>
+</Steps>
+
+### API Reference
+
+From the integration specifications:
+
+```python
+# From specs/INTEGRATIONS.md:183-194
+async def submit_for_review(candidate: PolishedCandidate) -> dict:
+    """
+    Submit candidate code to CodeRabbit for review.
+    """
+    response = await coderabbit_client.post("/reviews", json={
+        "files": [
+            {"path": f.path, "content": f.content}
+            for f in candidate.code_files
+        ],
+        "context": f"Hackathon prototype for: {candidate.approach_description}",
+        "review_type": "full",
+        "language": "python"
+    })
+    return response
+```
+
+### Example Improvements
+
+The UI demonstrates three types of improvements:
+
+**1. Error Handling**
+```python
+# Before
+try:
+    response = await fetch()
+except:
+    pass
+
+# After
+try:
+    response = await fetch()
+except httpx.HTTPError as e:
+    logger.error(f"API error: {e}")
+    raise
+```
+
+**2. Exception Specificity**
+```python
+# Before
+element = driver.find_element(...)
+element.click()
+
+# After
+try:
+    element = driver.find_element(...)
+    element.click()
+except NoSuchElementException:
+    logger.warning("Element not found")
+```
+
+**3. Fallback Logic**
+```python
+# Before
+soup = BeautifulSoup(html)
+events = parse_events(soup)
+# No fallback for JS pages
+
+# After
+soup = BeautifulSoup(html, 'lxml')
+events = parse_events(soup)
+if not events:
+    logger.info("JS page, using API")
+    events = fallback_api_fetch()
+```
+
+### Configuration
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `CODERABBIT_TOKEN` | Yes | API authentication token |
+
+---
+
+## ElevenLabs
+
+### Purpose
+
+Generate voice narration for winner announcements and showcase presentations in the Awakening phase.
+
+### Setup
+
+<Steps>
+  <Step title="Get API key">
+    Sign up at [elevenlabs.io](https://elevenlabs.io) and get your API key
+  </Step>
+  
+  <Step title="Add to environment">
+    ```bash
+    # .env
+    ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+    ```
+  </Step>
+  
+  <Step title="Install dependencies">
+    ```bash
+    pip install elevenlabs
+    ```
+  </Step>
+</Steps>
+
+### Configuration Check
+
+```python
+# From src/elevenlabs.py (imported in app.py)
+def is_configured() -> bool:
+    """Check if ElevenLabs is configured."""
+    api_key = os.getenv("ELEVENLABS_API_KEY")
+    return api_key is not None and not api_key.startswith("your_")
+```
+
+### Generating Winner Script
+
+```python
+# From app.py:655-659
+narration_script = generate_winner_script(
+    winner_name,
+    result.winner_score,
+    result.objective,
+)
+```
+
+The script generation function creates a compelling narrative:
+
+```python
+# From src/elevenlabs.py
+def generate_winner_script(
+    winner_name: str,
+    score: float,
+    objective: str
+) -> str:
+    return f"""Congratulations! After a fierce competition in the Dream Foundry,
+    {winner_name} has emerged victorious with a score of {score:.1f} out of 100.
+    
+    The objective was: {objective}
+    
+    {winner_name} delivered exceptional results, demonstrating the perfect balance
+    of speed, quality, and reliability. This winning implementation will now be
+    deployed to production.
+    
+    The Dream Foundry - where AI agents compete, and the best code wins.
+    """
+```
+
+### Generating Audio
+
+```python
+# From app.py:663-670
+if st.button("Generate & Play Audio", use_container_width=True):
+    with st.spinner("Generating audio with ElevenLabs..."):
+        audio_bytes = generate_audio(narration_script)
+        if audio_bytes:
+            st.session_state.winner_audio = audio_bytes
+            st.success("Audio generated!")
+        else:
+            st.error("Failed to generate audio. Check API key.")
+```
+
+### Playing Audio
+
+```python
+# From app.py:672-674
+if st.session_state.winner_audio:
+    st.audio(st.session_state.winner_audio, format="audio/mp3")
+```
+
+### API Reference
+
+From the integration specifications:
+
+```python
+# From specs/INTEGRATIONS.md:289-315
+async def generate_voice(
+    text: str,
+    voice_type: Literal["engineering", "marketing", "executive"],
+    output_path: str
+) -> str:
+    """
+    Generate voice audio from text using ElevenLabs.
+    Returns path to generated audio file.
+    """
+    voice_id = VOICES[voice_type]
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={
+                "xi-api-key": os.getenv("ELEVENLABS_API_KEY"),
+                "Content-Type": "application/json"
+            },
+            json={
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
+            }
+        )
+
+        with open(output_path, "wb") as f:
+            f.write(response.content)
+
+        return output_path
+```
+
+### Voice Options
+
+The integration supports three voice types:
+
+- **Engineering**: Clear, detailed, technical
+- **Marketing**: Upbeat, persuasive, enthusiastic  
+- **Executive**: Confident, concise, professional
+
+### Configuration
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ELEVENLABS_API_KEY` | Yes | API authentication key |
+
+---
+
+## Discord (Bonus)
+
+While not a core integration, Discord posting is included for demos.
+
+### Setup
+
+```bash
+# .env
+DISCORD_WEBHOOK_URL=your_discord_webhook_url
+```
+
+### Usage
+
+```python
+# From app.py:691-705
+if st.button("Post to Discord", use_container_width=True):
+    with st.spinner("Posting to Discord..."):
+        success, msg = post_winner_announcement(
+            winner_id=result.winner_id,
+            winner_score=result.winner_score,
+            artifact_content=result.winner_artifact or "No content",
+            objective=result.objective,
+        )
+        if success:
+            st.session_state.posted_to_discord = True
+            st.success("Posted to Discord!")
+            st.balloons()
+            st.rerun()
+        else:
+            st.error(f"Failed: {msg}")
+```
+
+---
+
+## Complete Environment File
+
+Here's a complete `.env` file with all integrations:
+
+```bash
+# Daytona - Sandbox execution
+DAYTONA_API_KEY=your_daytona_api_key
+DAYTONA_BASE_URL=https://api.daytona.io/v1
+
+# Sentry - Error monitoring
+SENTRY_DSN=https://xxx@sentry.io/xxx
+
+# CodeRabbit - Code review
+CODERABBIT_TOKEN=your_coderabbit_token
+
+# ElevenLabs - Voice synthesis
+ELEVENLABS_API_KEY=your_elevenlabs_api_key
+
+# Discord - Demo posting (optional)
+DISCORD_WEBHOOK_URL=your_discord_webhook
+```
+
+<Warning>
+Never commit your `.env` file to version control. Add it to `.gitignore`.
+</Warning>
+
+## Integration Status Check
+
+Create a script to check all integrations:
+
+```python
+#!/usr/bin/env python3
+"""Check integration status."""
+
+import os
+from src.daytona_runner import is_daytona_configured
+from src.elevenlabs import is_configured as elevenlabs_configured
+from src.discord_poster import is_discord_configured
+
+def check_integrations():
+    print("Integration Status")
+    print("=" * 40)
+    
+    # Daytona
+    daytona_ok = is_daytona_configured()
+    print(f"Daytona:    {'✓' if daytona_ok else '✗'}")
+    
+    # Sentry
+    sentry_ok = bool(os.getenv("SENTRY_DSN"))
+    print(f"Sentry:     {'✓' if sentry_ok else '✗'}")
+    
+    # CodeRabbit
+    coderabbit_ok = bool(os.getenv("CODERABBIT_TOKEN"))
+    print(f"CodeRabbit: {'✓' if coderabbit_ok else '✗'}")
+    
+    # ElevenLabs
+    elevenlabs_ok = elevenlabs_configured()
+    print(f"ElevenLabs: {'✓' if elevenlabs_ok else '✗'}")
+    
+    # Discord
+    discord_ok = is_discord_configured()
+    print(f"Discord:    {'✓' if discord_ok else '✗'}")
+    
+    print("=" * 40)
+    
+    if all([daytona_ok, sentry_ok, coderabbit_ok, elevenlabs_ok]):
+        print("All core integrations configured! 🎉")
+    else:
+        print("Some integrations need configuration.")
+
+if __name__ == "__main__":
+    check_integrations()
+```
+
+Run it:
+
+```bash
+python check_integrations.py
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Running the Forge" href="/guides/running-forge" icon="play">
+    Put integrations to work in the forge loop
+  </Card>
+  <Card title="Creating Agents" href="/guides/creating-agents" icon="robot">
+    Build agents that work with all integrations
+  </Card>
+</CardGroup>

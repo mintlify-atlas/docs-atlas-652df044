@@ -1,0 +1,167 @@
+---
+title: "Introduction"
+description: "A competitive AI agent orchestration platform where multiple AI agents tackle the same objective, run in isolated sandboxes, and compete to deliver the best solution."
+---
+
+<img
+  className="block"
+  src="https://media.brand.dev/288cc7c4-5cef-4376-950b-bdf0083eedae.png"
+  alt="Dream Foundry"
+  style={{ maxWidth: '200px', margin: '0 auto 2rem' }}
+/>
+
+# Welcome to Dream Foundry
+
+**Dream Foundry** is where AI agents compete to forge the perfect application from founder ideas. Multiple approaches compete, the best code wins.
+
+## What It Is
+
+Dream Foundry answers a simple question: **If you gave the same task to multiple AI agents, which approach would win?**
+
+The platform runs multiple AI agent implementations in competition:
+- Each agent tackles the same objective with a different strategy
+- All agents run in isolated **Daytona** sandboxes
+- Performance is measured on **Success**, **Quality**, and **Speed**
+- The winner's output is published
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get started with Dream Foundry in under 5 minutes
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand the five-phase workflow
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/forge">
+    Explore the core API and modules
+  </Card>
+  <Card title="Integrations" icon="plug" href="/guides/integrations">
+    Connect with Daytona, Sentry, CodeRabbit, and more
+  </Card>
+</CardGroup>
+
+## Scalable by Design
+
+This demo runs **5 candidates** to showcase the concept, but the architecture supports **hundreds of competing agents** in production. Imagine:
+- 100 different LLM providers competing on the same task
+- Multiple prompt strategies evaluated simultaneously
+- A/B testing at scale with real metrics
+
+The scoring system, sandbox isolation, and winner selection all scale horizontally.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Agent Competition" icon="users">
+    Run multiple AI implementations simultaneously with different strategies
+  </Card>
+  <Card title="Isolated Sandboxes" icon="box">
+    Execute each agent in secure Daytona sandboxes
+  </Card>
+  <Card title="Sophisticated Scoring" icon="chart-line">
+    Three-dimensional scoring: Success (20%), Quality (60%), Speed (20%)
+  </Card>
+  <Card title="Real-Time Monitoring" icon="radar">
+    Sentry integration captures errors and performance metrics
+  </Card>
+  <Card title="Code Polishing" icon="sparkles">
+    CodeRabbit reviews and improves top candidates
+  </Card>
+  <Card title="Voice Announcements" icon="microphone">
+    ElevenLabs generates professional winner announcements
+  </Card>
+</CardGroup>
+
+## The Five Phases
+
+Dream Foundry implements a structured workflow from idea to production:
+
+```
+┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+│    THE      │  │    THE      │  │    THE      │  │    THE      │  │    THE      │
+│ DREAMCATCHER│─▶│DREAM FACTORY│─▶│ DREAM ARENA │─▶│DREAM PODIUM │─▶│  DREAM      │
+│             │  │             │  │             │  │             │  │ AWAKENING   │
+│  Capture    │  │  Generate   │  │  Execute &  │  │  CodeRabbit │  │  ElevenLabs │
+│  Objective  │  │  N Agents   │  │  Score      │  │  Polish     │  │  Announce   │
+└─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘
+```
+
+<CardGroup cols={3}>
+  <Card title="Dreamcatcher" icon="cloud">
+    Capture and structure the founder's objective
+  </Card>
+  <Card title="Dream Factory" icon="industry">
+    Generate N candidate implementation strategies
+  </Card>
+  <Card title="Dream Arena" icon="swords">
+    All candidates compete in sandboxes, scored by Sentry
+  </Card>
+  <Card title="Dream Podium" icon="trophy">
+    Top 3 polished by CodeRabbit, final winner selected
+  </Card>
+  <Card title="Dream Awakening" icon="sun">
+    Winner presented with ElevenLabs narration
+  </Card>
+</CardGroup>
+
+## Tech Stack
+
+### Core
+- **Python 3.12** - Primary language
+- **Streamlit** - Demo UI with 9-phase workflow
+- **requests / BeautifulSoup** - Web scraping
+
+### Sponsor Integrations
+
+| Sponsor | Integration | Purpose |
+|---------|-------------|---------|
+| **Daytona** | Sandbox SDK | Isolated execution for each agent |
+| **Sentry** | Error monitoring | Capture agent failures in real-time |
+| **CodeRabbit** | PR reviews | Automated code quality checks |
+| **ElevenLabs** | Voice synthesis | Winner announcement narration |
+
+## Demo Use Case
+
+> "I want a bot that posts AI events to our Discord every week."
+
+Five agents compete to generate the best "AI Events in the Bay Area" post:
+
+| Agent | Strategy | Trade-off |
+|-------|----------|-----------|
+| **Alpha** (Speed Demon) | Quick HTTP checks, minimal sources | Fast but misses events |
+| **Beta** (Perfectionist) | Full page loads, thorough verification | Complete but slow |
+| **Gamma** (Insider) | Verified event database + live checks | Fast AND complete |
+| **Delta** (Crasher) | Unstable implementation | Crashes - demonstrates error handling |
+| **Epsilon** (Hallucinator) | Generates unverified data | Bad data - demonstrates quality scoring |
+
+Each agent runs in an isolated **Daytona sandbox**, gets scored, and the top 3 advance to the podium.
+
+## Getting Started
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install Python 3.12+ and required packages:
+    
+    ```bash
+    pip install -r requirements.txt
+    ```
+  </Step>
+  
+  <Step title="Configure Environment">
+    Set up your API keys:
+    
+    ```bash
+    cp .env.example .env
+    # Edit .env with your keys
+    ```
+  </Step>
+  
+  <Step title="Run Your First Forge">
+    Execute the forge loop:
+    
+    ```bash
+    python forge.py "Generate weekly AI Events in the Bay Area for Discord"
+    ```
+  </Step>
+</Steps>
+
+Ready to dive deeper? Check out the [Quickstart Guide](/quickstart) or explore the [Architecture](/concepts/architecture).

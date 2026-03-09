@@ -1,0 +1,616 @@
+---
+title: "Validator Module"
+description: "Comprehensive event validation system that checks date, location, AI relevance, and URL validity"
+---
+
+## Overview
+
+The Validator module provides comprehensive validation of individual events across four key criteria:
+
+1. **Date/Time** - Is it a valid date? Is it in the future?
+2. **Location** - Is it in San Francisco / Bay Area?
+3. **AI Related** - Does the title/description indicate AI/ML content?
+4. **Real Link** - Is the URL valid and accessible?
+
+Each check returns a score (0-100) and detailed feedback.
+
+---
+
+## Core Function
+
+### validate_event()
+
+Performs comprehensive validation of a single event.
+
+<ParamField path="title" type="str" required>
+  Event title
+</ParamField>
+
+<ParamField path="date" type="str" required>
+  Event date in various formats (e.g., "January 28, 2025", "2025-01-28")
+</ParamField>
+
+<ParamField path="location" type="str" required>
+  Event location (city or venue name)
+</ParamField>
+
+<ParamField path="url" type="str" required>
+  Event registration/info URL
+</ParamField>
+
+<ParamField path="description" type="str" optional>
+  Optional event description for additional AI keyword matching
+</ParamField>
+
+<ParamField path="check_http" type="bool" default="False">
+  If `True`, performs HTTP request to verify URL is accessible. This adds latency but ensures URLs are live.
+</ParamField>
+
+**Returns:** `ValidationResult` with scores for each check and overall validity
+
+<CodeGroup>
+```python Basic Validation
+from src.validator import validate_event
+
+result = validate_event(
+    title="Daytona AI Hackathon",
+    date="January 24, 2026",
+    location="San Francisco",
+    url="https://compute.daytona.io/hackathon"
+)
+
+print(f"Valid: {result.is_valid}")
+print(f"Total Score: {result.total_score}")
+print(f"Date: {result.date_details}")
+print(f"Location: {result.location_details}")
+print(f"AI Related: {result.ai_details}")
+print(f"Link: {result.link_details}")
+```
+
+```python With HTTP Check
+from src.validator import validate_event
+
+result = validate_event(
+    title="AI Tinkerers Meetup",
+    date="January 27, 2026",
+    location="Palo Alto",
+    url="https://lu.ma/ai-tinkerers",
+    check_http=True  # Verify URL is accessible
+)
+
+print(f"Link Score: {result.link_score}")
+print(f"Link Details: {result.link_details}")
+```
+
+```python With Description
+from src.validator import validate_event
+
+result = validate_event(
+    title="Tech Meetup",
+    date="January 28, 2026",
+    location="San Francisco",
+    url="https://meetup.com/event",
+    description="Join us for a deep dive into large language models and RAG systems"
+)
+
+print(f"AI Related: {result.ai_related}")  # True (found AI keywords in description)
+```
+</CodeGroup>
+
+---
+
+## Data Classes
+
+### ValidationResult
+
+Result of validating a single event.
+
+<ResponseField name="event_title" type="str">
+  Title of the validated event
+</ResponseField>
+
+<ResponseField name="is_valid" type="bool">
+  Overall validity (True only if ALL checks pass)
+</ResponseField>
+
+<ResponseField name="total_score" type="float">
+  Weighted total score (0-100) across all criteria
+</ResponseField>
+
+<ResponseField name="date_valid" type="bool">
+  Whether date validation passed
+</ResponseField>
+
+<ResponseField name="date_score" type="float">
+  Date validation score (0-100)
+</ResponseField>
+
+<ResponseField name="date_details" type="str">
+  Human-readable date validation details
+</ResponseField>
+
+<ResponseField name="location_valid" type="bool">
+  Whether location validation passed
+</ResponseField>
+
+<ResponseField name="location_score" type="float">
+  Location validation score (0-100)
+</ResponseField>
+
+<ResponseField name="location_details" type="str">
+  Human-readable location validation details
+</ResponseField>
+
+<ResponseField name="ai_related" type="bool">
+  Whether AI keyword validation passed
+</ResponseField>
+
+<ResponseField name="ai_score" type="float">
+  AI relevance score (0-100)
+</ResponseField>
+
+<ResponseField name="ai_details" type="str">
+  Human-readable AI validation details
+</ResponseField>
+
+<ResponseField name="link_valid" type="bool">
+  Whether URL validation passed
+</ResponseField>
+
+<ResponseField name="link_score" type="float">
+  Link validation score (0-100)
+</ResponseField>
+
+<ResponseField name="link_details" type="str">
+  Human-readable link validation details
+</ResponseField>
+
+---
+
+## Validation Functions
+
+### validate_date()
+
+Validates event date and checks if it's reasonable.
+
+<ParamField path="date_str" type="str" required>
+  Date string in various formats
+</ParamField>
+
+**Returns:** Tuple of `(is_valid: bool, score: float, details: str)`
+
+**Checks:**
+- Is it a parseable date?
+- Is it in the future (or today)?
+- Is it within reasonable range (next 6 months)?
+
+**Supported Formats:**
+- `"January 28, 2025"`
+- `"Jan 28, 2025"`
+- `"2025-01-28"`
+- `"01/28/2025"`
+- `"28 January 2025"`
+- `"Every Tuesday"` (recurring events)
+
+**Scoring:**
+- Valid future date within 6 months: 100.0
+- Valid but far future (>180 days): 75.0
+- Recent past (within 7 days): 75.0
+- Old past (>7 days ago): 25.0
+- Recurring events: 100.0
+- Unparseable: 0.0
+
+<CodeGroup>
+```python Date Validation
+from src.validator import validate_date
+
+valid, score, details = validate_date("January 28, 2025")
+print(f"Valid: {valid}, Score: {score}, Details: {details}")
+# Valid: True, Score: 100.0, Details: Valid date: January 28, 2025
+
+valid, score, details = validate_date("Every Tuesday")
+print(f"Valid: {valid}, Score: {score}, Details: {details}")
+# Valid: True, Score: 100.0, Details: Recurring weekly event
+```
+</CodeGroup>
+
+---
+
+### validate_location()
+
+Validates event location is in SF/Bay Area.
+
+<ParamField path="location" type="str" required>
+  Location string (city or venue name)
+</ParamField>
+
+**Returns:** Tuple of `(is_valid: bool, score: float, details: str)`
+
+**Location Tiers:**
+
+1. **San Francisco (100.0)**: san francisco, sf, soma, fidi, mission, castro, shack15, notion hq, anthropic, openai, agi house, south park commons, moscone
+
+2. **Bay Area (80.0)**: menlo park, palo alto, mountain view, sunnyvale, cupertino, san jose, oakland, berkeley, fremont, redwood city, santa clara, stanford
+
+3. **California (60.0)**: Any location with "ca" or "california"
+
+4. **Online (70.0)**: online, virtual, zoom, youtube
+
+5. **Other (0.0)**: Locations outside these areas
+
+<CodeGroup>
+```python Location Validation
+from src.validator import validate_location
+
+valid, score, details = validate_location("San Francisco")
+print(f"Score: {score}, Details: {details}")
+# Score: 100.0, Details: Location in San Francisco: San Francisco
+
+valid, score, details = validate_location("Palo Alto")
+print(f"Score: {score}, Details: {details}")
+# Score: 80.0, Details: Location in Bay Area: Palo Alto
+
+valid, score, details = validate_location("Online")
+print(f"Score: {score}, Details: {details}")
+# Score: 70.0, Details: Online event (accessible from SF): Online
+```
+</CodeGroup>
+
+---
+
+### validate_ai_related()
+
+Validates event is AI/ML related based on keywords.
+
+<ParamField path="title" type="str" required>
+  Event title
+</ParamField>
+
+<ParamField path="description" type="str" optional>
+  Optional event description
+</ParamField>
+
+**Returns:** Tuple of `(is_valid: bool, score: float, details: str)`
+
+**AI Keywords (case-insensitive):**
+
+**Core AI/ML:**
+- ai, artificial intelligence, machine learning, ml, deep learning, neural network, llm, large language model
+
+**Technologies:**
+- gpt, claude, anthropic, openai, langchain, rag, transformer, diffusion, stable diffusion, midjourney, pytorch, tensorflow, hugging face, ollama
+
+**Subfields:**
+- nlp, natural language, computer vision, cv, reinforcement learning, generative ai, genai, agent, agents, autonomous, embedding, vector
+
+**Applications:**
+- chatbot, copilot, automation, mlops, data science
+
+**Companies/Orgs:**
+- google ai, meta ai, microsoft ai, nvidia, ai makerspace, ai tinkerers, ai engineers
+
+**Scoring:**
+- 3+ keywords found: 100.0
+- 1-2 keywords found: 80.0
+- No keywords: 0.0
+
+<CodeGroup>
+```python AI Validation
+from src.validator import validate_ai_related
+
+valid, score, details = validate_ai_related(
+    title="AI Tinkerers Meetup",
+    description="Exploring LLMs and RAG systems"
+)
+print(f"Score: {score}, Details: {details}")
+# Score: 100.0, Details: Strongly AI-related (ai, llm, rag)
+
+valid, score, details = validate_ai_related(
+    title="Machine Learning Workshop"
+)
+print(f"Score: {score}, Details: {details}")
+# Score: 80.0, Details: AI-related (machine learning, ml)
+```
+</CodeGroup>
+
+---
+
+### validate_link()
+
+Validates event URL format and optionally checks accessibility.
+
+<ParamField path="url" type="str" required>
+  Event URL
+</ParamField>
+
+<ParamField path="check_http" type="bool" default="False">
+  If True, performs HTTP request to verify accessibility
+</ParamField>
+
+**Returns:** Tuple of `(is_valid: bool, score: float, details: str)`
+
+**Valid Event Domains:**
+- lu.ma, luma.com
+- meetup.com
+- eventbrite.com, eventbrite.co.uk
+- partiful.com
+- supermomos.com
+- humanx.co
+- nearcon.org
+- daytona.io, compute.daytona.io
+
+**Scoring:**
+- Known platform: 100.0
+- Unknown platform (but valid URL): 60.0
+- HTTP 200 (if check_http=True): no change
+- HTTP redirect (if check_http=True): no change
+- HTTP error (if check_http=True): -20 points
+- Cannot verify (if check_http=True): -10 points
+- Invalid URL format: 0.0
+
+<CodeGroup>
+```python Link Validation
+from src.validator import validate_link
+
+valid, score, details = validate_link("https://lu.ma/ai-event")
+print(f"Score: {score}, Details: {details}")
+# Score: 100.0, Details: Valid URL from lu.ma
+
+valid, score, details = validate_link("https://random-site.com/event")
+print(f"Score: {score}, Details: {details}")
+# Score: 60.0, Details: URL from unknown platform: random-site.com
+
+# With HTTP verification
+valid, score, details = validate_link(
+    "https://lu.ma/ai-event",
+    check_http=True
+)
+print(f"Details: {details}")
+# Details: Valid URL from lu.ma (verified accessible)
+```
+</CodeGroup>
+
+---
+
+## Batch Validation
+
+### validate_events_list()
+
+Validates a list of events.
+
+<ParamField path="events" type="list[dict]" required>
+  List of event dictionaries. Each event should have:
+  - `title`: Event title
+  - `date`: Event date
+  - `location`: Event location
+  - `url`: Event URL
+  - `description`: (optional) Event description
+</ParamField>
+
+<ParamField path="check_http" type="bool" default="False">
+  Whether to verify URLs via HTTP
+</ParamField>
+
+**Returns:** `list[ValidationResult]` - Validation results for each event
+
+<CodeGroup>
+```python Batch Validation
+from src.validator import validate_events_list
+
+events = [
+    {
+        "title": "Daytona AI Hackathon",
+        "date": "January 24, 2026",
+        "location": "San Francisco",
+        "url": "https://compute.daytona.io/hackathon"
+    },
+    {
+        "title": "AI Tinkerers Meetup",
+        "date": "January 27, 2026",
+        "location": "Palo Alto",
+        "url": "https://lu.ma/ai-tinkerers"
+    }
+]
+
+results = validate_events_list(events)
+
+for result in results:
+    print(f"{result.event_title}: {result.total_score}")
+    print(f"  Valid: {result.is_valid}")
+```
+</CodeGroup>
+
+---
+
+## Reporting
+
+### print_validation_report()
+
+Prints a formatted validation report to console.
+
+<ParamField path="results" type="list[ValidationResult]" required>
+  List of validation results to report
+</ParamField>
+
+<CodeGroup>
+```python Validation Report
+from src.validator import validate_events_list, print_validation_report
+
+events = [
+    {
+        "title": "Daytona AI Hackathon",
+        "date": "January 24, 2026",
+        "location": "San Francisco",
+        "url": "https://compute.daytona.io/hackathon"
+    },
+    {
+        "title": "Generic Meetup",
+        "date": "January 28, 2026",
+        "location": "Los Angeles",
+        "url": "https://example.com"
+    }
+]
+
+results = validate_events_list(events)
+print_validation_report(results)
+```
+
+**Output:**
+```
+============================================================
+EVENT VALIDATION REPORT
+============================================================
+
+Summary: 1/2 events passed validation
+
+1. [PASS] Daytona AI Hackathon (Score: 100.0)
+   Date: Valid date: January 24, 2026
+   Location: Location in San Francisco: San Francisco
+   AI: Strongly AI-related (ai, hackathon, daytona)
+   Link: Valid URL from compute.daytona.io
+
+2. [FAIL] Generic Meetup (Score: 40.0)
+   Date: Valid date: January 28, 2026
+   Location: Location not in SF/Bay Area: Los Angeles
+   AI: No AI keywords found in: Generic Meetup
+   Link: URL from unknown platform: example.com
+```
+</CodeGroup>
+
+---
+
+## Total Score Calculation
+
+The total score is a weighted average of all four criteria:
+
+```python
+total_score = (
+    date_score * 0.25 +
+    location_score * 0.25 +
+    ai_score * 0.25 +
+    link_score * 0.25
+)
+```
+
+**Weights:**
+- Date: 25%
+- Location: 25%
+- AI Related: 25%
+- Link: 25%
+
+**Validity:**
+An event is considered valid (`is_valid = True`) ONLY if all four checks pass.
+
+---
+
+## Constants Reference
+
+### SF_LOCATIONS
+
+Locations within San Francisco (score 100.0):
+
+```python
+SF_LOCATIONS = [
+    "san francisco", "sf", "soma", "fidi", "financial district",
+    "mission", "castro", "haight", "marina", "north beach",
+    "shack15", "notion hq", "anthropic", "openai", "agi house",
+    "south park commons", "moscone", "yerba buena",
+]
+```
+
+### BAY_AREA_LOCATIONS
+
+Bay Area locations (score 80.0):
+
+```python
+BAY_AREA_LOCATIONS = SF_LOCATIONS + [
+    "menlo park", "palo alto", "mountain view", "sunnyvale",
+    "cupertino", "san jose", "oakland", "berkeley", "fremont",
+    "redwood city", "santa clara", "stanford",
+]
+```
+
+### VALID_EVENT_DOMAINS
+
+Known event platforms (score 100.0):
+
+```python
+VALID_EVENT_DOMAINS = [
+    "lu.ma", "luma.com",
+    "meetup.com",
+    "eventbrite.com", "eventbrite.co.uk",
+    "partiful.com",
+    "supermomos.com",
+    "humanx.co",
+    "nearcon.org",
+    "daytona.io", "compute.daytona.io",
+]
+```
+
+---
+
+## Complete Example
+
+<CodeGroup>
+```python Full Validation Workflow
+from src.validator import (
+    validate_event,
+    validate_events_list,
+    print_validation_report
+)
+
+# Validate single event
+result = validate_event(
+    title="Daytona AI Hackathon",
+    date="January 24, 2026",
+    location="San Francisco",
+    url="https://compute.daytona.io/hackathon",
+    description="Build AI applications with Daytona sandboxes"
+)
+
+print(f"Event: {result.event_title}")
+print(f"Valid: {result.is_valid}")
+print(f"Total Score: {result.total_score}/100")
+print()
+print("Individual Scores:")
+print(f"  Date: {result.date_score}/100 - {result.date_details}")
+print(f"  Location: {result.location_score}/100 - {result.location_details}")
+print(f"  AI: {result.ai_score}/100 - {result.ai_details}")
+print(f"  Link: {result.link_score}/100 - {result.link_details}")
+
+# Validate list of events
+events = [
+    {
+        "title": "Daytona AI Hackathon",
+        "date": "January 24, 2026",
+        "location": "San Francisco",
+        "url": "https://compute.daytona.io/hackathon"
+    },
+    {
+        "title": "AI Tinkerers Meetup",
+        "date": "January 27, 2026",
+        "location": "Palo Alto",
+        "url": "https://lu.ma/ai-tinkerers"
+    }
+]
+
+results = validate_events_list(events, check_http=False)
+print_validation_report(results)
+
+# Count valid events
+valid_count = sum(1 for r in results if r.is_valid)
+print(f"\nValid events: {valid_count}/{len(results)}")
+```
+</CodeGroup>
+
+---
+
+## Performance Considerations
+
+<Note>
+  **HTTP Verification**: Setting `check_http=True` adds latency (typically 100-500ms per URL) but ensures URLs are live. Use sparingly or only in production validation.
+  
+  **Batch Processing**: Use `validate_events_list()` for multiple events to process them efficiently.
+  
+  **Keyword Matching**: AI keyword matching is case-insensitive and checks both title and description.
+</Note>

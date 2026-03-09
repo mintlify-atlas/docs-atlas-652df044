@@ -1,0 +1,528 @@
+---
+title: 'Agent Strategies'
+description: 'Deep dive into each agent implementation and their trade-offs'
+---
+
+## Overview
+
+The Dream Foundry demo includes 5 pre-built agents that showcase different implementation strategies for the same objective: **"Generate weekly AI events for Discord."**
+
+Each agent makes different trade-offs between speed, quality, and reliability.
+
+---
+
+## Agent Alpha: The Speed Demon
+
+**Strategy**: Prioritize speed over completeness
+
+### Implementation
+
+```python
+# From agent_alpha.py:24
+def fetch_quick_events() -> list[dict]:
+    """Fast fetch - only check top sources."""
+    events = []
+    
+    # Only check the most popular/reliable meetups for speed
+    quick_sources = [
+        ("https://www.meetup.com/san-francisco-ai-engineers/", "AI Engineers SF Meetup", "Tuesday, January 27, 2026", "6:00 PM - 8:00 PM", "San Francisco, CA"),
+        ("https://lu.ma/aimakerspace", "AI Makerspace Weekly Meetup", "Wednesday, January 28, 2026", "6:00 PM - 9:00 PM", "San Francisco, CA"),
+        ("https://www.meetup.com/san-francisco-langchain-meetup/", "LangChain SF Meetup", "Thursday, January 29, 2026", "6:30 PM - 8:30 PM", "San Francisco, CA"),
+        ("https://www.meetup.com/san-francisco-ai-tinkerers/", "SF AI Tinkerers Meetup", "Wednesday, January 28, 2026", "6:00 PM - 9:00 PM", "San Francisco, CA"),
+    ]
+    
+    for url, title, date, time_str, location in quick_sources:
+        try:
+            # Quick HEAD request to verify URL exists
+            resp = requests.head(url, timeout=3, allow_redirects=True, headers=headers)
+            if resp.status_code in [200, 301, 302]:
+                events.append({...})
+        except requests.Timeout:
+            print(f"[Alpha] Timeout on {url}, skipping for speed")
+```
+
+### Key Optimizations
+
+<Steps>
+  <Step title="Limited Source Checking">
+    Only checks 4 top sources instead of comprehensive scan
+  </Step>
+  
+  <Step title="HEAD Requests Only">
+    Uses HTTP HEAD instead of GET to avoid downloading full pages:
+    
+    ```python
+    # From agent_alpha.py:42
+    resp = requests.head(url, timeout=3, allow_redirects=True)
+    ```
+  </Step>
+  
+  <Step title="Short Timeouts">
+    3-second timeout prevents slow sources from blocking execution
+  </Step>
+  
+  <Step title="Skips Weekend Events">
+    Intentionally skips Saturday/Sunday events for speed:
+    
+    ```python
+    # From agent_alpha.py:59
+    print("[Alpha] Skipping weekend events for speed")
+    ```
+  </Step>
+</Steps>
+
+### Trade-offs
+
+<CardGroup cols={2}>
+  <Card title="Strengths" icon="plus">
+    - **Very fast**: ~4.2 seconds execution
+    - **Low resource usage**: Minimal HTTP requests
+    - **Reliable**: Only uses known-good sources
+  </Card>
+  
+  <Card title="Weaknesses" icon="minus">
+    - **Misses hackathons**: Skips weekend events where hackathons happen
+    - **Low quality score**: Missing critical events
+    - **Incomplete coverage**: Only 4 events vs. competitors' 8-10
+  </Card>
+</CardGroup>
+
+### Scoring
+
+```python
+Success: 100.0  # Runs without errors
+Quality: 45.0   # Missing hackathon event (-25), only 4 events
+Speed: 86.0     # Very fast at 4.2 seconds
+Total: 64.2     # Third place
+```
+
+<Note>
+Agent Alpha demonstrates the classic **"fast but incomplete"** anti-pattern. Speed can't compensate for missing critical requirements (the hackathon event).
+</Note>
+
+---
+
+## Agent Beta: The Perfectionist
+
+**Strategy**: Verify everything thoroughly, prioritize quality over speed
+
+### Implementation
+
+```python
+# From agent_beta.py:14
+def fetch_events() -> list[dict]:
+    """Fetch and verify AI events."""
+    print("[Beta] Starting thorough verification...")
+    
+    all_events = [
+        # SATURDAY, January 24, 2026 - DAYTONA HACKSPRINT
+        ("https://lu.ma/kga3qtfc", "Daytona HackSprint SF", "Saturday, January 24, 2026", "5:00 PM - 11:00 PM", "San Francisco, CA", "hackathon"),
+        # ... 7 more events
+    ]
+    
+    for url, title, date, time_str, location, event_type in all_events:
+        print(f"[Beta] Checking {title}...")
+        time.sleep(0.2)  # Rate limiting
+        
+        try:
+            resp = requests.get(url, timeout=10, allow_redirects=True, headers=headers)
+            if resp.status_code == 200:
+                events.append({...})
+                print(f"[Beta] Verified: {title}")
+        except Exception as e:
+            print(f"[Beta] Error: {title} - {e}")
+```
+
+### Key Features
+
+<Steps>
+  <Step title="Full HTTP GET Requests">
+    Uses complete GET requests to verify page content:
+    
+    ```python
+    # From agent_beta.py:51
+    resp = requests.get(url, timeout=10, allow_redirects=True)
+    ```
+  </Step>
+  
+  <Step title="Comprehensive Coverage">
+    Checks 8 events across all 7 days of the week, including weekends
+  </Step>
+  
+  <Step title="Rate Limiting">
+    Adds 200ms delay between requests to be a good citizen:
+    
+    ```python
+    # From agent_beta.py:48
+    time.sleep(0.2)
+    ```
+  </Step>
+  
+  <Step title="Includes Hackathon">
+    Explicitly includes the Daytona HackSprint on Saturday, January 24
+  </Step>
+</Steps>
+
+### Trade-offs
+
+<CardGroup cols={2}>
+  <Card title="Strengths" icon="plus">
+    - **High quality**: 88/100 quality score
+    - **Complete coverage**: All 8 events pass validation
+    - **Includes hackathon**: Gets the critical +25 points
+    - **Thorough verification**: Full GET requests catch broken links
+  </Card>
+  
+  <Card title="Weaknesses" icon="minus">
+    - **Slower execution**: ~12.8 seconds (3x slower than Alpha)
+    - **Higher resource usage**: Full page downloads
+    - **Rate limiting overhead**: 200ms delay per event
+  </Card>
+</CardGroup>
+
+### Scoring
+
+```python
+Success: 100.0  # Runs without errors
+Quality: 88.0   # 8 valid events, hackathon included
+Speed: 57.3     # Slower due to thorough checks
+Total: 84.1     # Second place
+```
+
+<Note>
+Agent Beta shows that **"quality takes time."** The thoroughness pays off in quality score, but can't overcome Gamma's superior event curation.
+</Note>
+
+---
+
+## Agent Gamma: The Insider
+
+**Strategy**: Use curated, verified data sources for reliability and speed
+
+### Implementation
+
+```python
+# From agent_gamma.py:15
+def fetch_events() -> list[dict]:
+    """Fetch verified AI events from lu.ma and Meetup."""
+    print("[Gamma] Fetching from lu.ma and Meetup...")
+    
+    # VERIFIED EVENTS - All lu.ma links confirmed working
+    # Source: Cerebral Valley + direct lu.ma verification
+    verified_events = [
+        # SATURDAY, January 24, 2026 - DAYTONA HACKSPRINT
+        ("https://lu.ma/kga3qtfc", "Daytona HackSprint SF", "Saturday, January 24, 2026", "9:00 AM - 6:00 PM", "San Francisco, CA", "hackathon"),
+        # SUNDAY, January 25, 2026
+        ("https://www.meetup.com/sf-ai-paper-reading/", "AI Paper Reading Group", "Sunday, January 25, 2026", "2:00 PM - 4:00 PM", "San Francisco, CA", "meetup"),
+        # ... 8 more events covering all 7 days
+    ]
+    
+    for url, title, date, time_str, location, event_type in verified_events:
+        try:
+            resp = requests.get(url, timeout=8, allow_redirects=True)
+            if resp.status_code == 200:
+                events.append({
+                    "title": title,
+                    "date": date,
+                    "time": time_str,
+                    "location": location,
+                    "url": url,
+                    "event_type": event_type,
+                    "source": "lu.ma" if "lu.ma" in url else "Meetup"
+                })
+```
+
+### Key Features
+
+<Steps>
+  <Step title="Curated Data Source">
+    Uses pre-verified data from Cerebral Valley (the authoritative SF AI events community)
+  </Step>
+  
+  <Step title="Optimal Coverage">
+    10 events across all 7 days, including both weekend hackathons
+  </Step>
+  
+  <Step title="Balanced Timeouts">
+    8-second timeout balances speed and reliability
+  </Step>
+  
+  <Step title="Source Attribution">
+    Tracks whether events came from lu.ma or Meetup:
+    
+    ```python
+    # From agent_gamma.py:65
+    "source": "lu.ma" if "lu.ma" in url else "Meetup"
+    ```
+  </Step>
+</Steps>
+
+### Trade-offs
+
+<CardGroup cols={2}>
+  <Card title="Strengths" icon="plus">
+    - **Highest quality**: 94.3/100 quality score
+    - **Optimal event count**: 10 events (perfect balance)
+    - **Fast execution**: ~6.5 seconds (2x faster than Beta)
+    - **100% valid events**: All events pass strict validation
+    - **Two hackathons**: Daytona (Jan 24) + MCP (Jan 31)
+  </Card>
+  
+  <Card title="Weaknesses" icon="minus">
+    - **Relies on external data**: Dependent on Cerebral Valley curation
+    - **Not truly dynamic**: Pre-verified list vs. live scraping
+    - **Limited scalability**: Doesn't discover new sources
+  </Card>
+</CardGroup>
+
+### Scoring
+
+```python
+Success: 100.0  # Runs without errors
+Quality: 94.3   # 10 valid events, hackathon included, perfect validation
+Speed: 78.3     # Fast at 6.5 seconds
+Total: 92.3     # WINNER!
+```
+
+<Note>
+Agent Gamma wins by **combining the best of both worlds**: fast execution like Alpha, comprehensive coverage like Beta, plus superior data curation.
+</Note>
+
+---
+
+## Agent Delta: The Crasher
+
+**Strategy**: Intentionally fail to demonstrate error handling
+
+### Implementation
+
+```python
+# From agent_delta.py:14
+def fetch_events():
+    """This will crash with divide by zero."""
+    print("[Delta] Starting event fetch...")
+    print("[Delta] Calculating event scores...")
+
+    events_found = 0
+
+    # INTENTIONAL CRASH - divide by zero!
+    print("[Delta] Computing average score...")
+    average = 100 / events_found  # BOOM! ZeroDivisionError
+
+    return []
+```
+
+### Purpose
+
+Demonstrates how the system handles failures:
+
+<Steps>
+  <Step title="Sentry Captures Error">
+    Sentry SDK automatically captures the exception:
+    
+    ```python
+    # From forge.py:176
+    sentry_sdk.capture_message(
+        f"Candidate {candidate_id} failed: {error_message[:200]}",
+        level="error"
+    )
+    ```
+  </Step>
+  
+  <Step title="Graceful Degradation">
+    System continues running other candidates instead of crashing
+  </Step>
+  
+  <Step title="Clear Reporting">
+    Scoreboard shows DQ (disqualified) with reason
+  </Step>
+</Steps>
+
+### Scoring
+
+```python
+Success: 0.0    # Crashed before producing output
+Quality: 0.0    # No output to score
+Speed: 0.0      # Failed before completion
+Total: DQ       # Disqualified
+```
+
+<Note>
+Agent Delta validates that the system **fails gracefully** and provides visibility into errors through Sentry integration.
+</Note>
+
+---
+
+## Agent Epsilon: The Hallucinator
+
+**Strategy**: Intentionally produce bad data to test quality validation
+
+### Implementation
+
+```python
+# From agent_epsilon.py:14
+BAD_EVENTS = [
+    # Wrong date - February, not January!
+    {
+        "title": "Random Tech Meetup",
+        "date": "Tuesday, February 15, 2026",  # WRONG MONTH!
+        "time": "6:00 PM",
+        "location": "San Francisco, CA",
+        "url": "https://example.com/fake",  # Invalid URL domain
+        "event_type": "meetup",
+    },
+    # Wrong location - NYC not Bay Area!
+    {
+        "title": "AI Conference NYC",
+        "date": "Wednesday, January 28, 2026",
+        "time": "9:00 AM",
+        "location": "New York, NY",  # WRONG LOCATION!
+        "url": "https://lu.ma/nyc-ai",
+        "event_type": "conference",
+    },
+    # Not AI related at all
+    {
+        "title": "Cooking Class for Beginners",  # NOT AI!
+        "date": "Thursday, January 29, 2026",
+        "time": "7:00 PM",
+        "location": "San Francisco, CA",
+        "url": "https://meetup.com/cooking",
+        "event_type": "meetup",
+    },
+    # Wrong year!
+    {
+        "title": "AI Summit 2024",
+        "date": "Friday, January 30, 2024",  # WRONG YEAR!
+        "time": "10:00 AM",
+        "location": "Palo Alto, CA",
+        "url": "https://lu.ma/old-event",
+        "event_type": "conference",
+    },
+]
+```
+
+### Purpose
+
+Validates that quality scoring catches common failure modes:
+
+<Steps>
+  <Step title="Wrong Date">
+    Events outside January 24-31, 2026 get flagged:
+    
+    ```python
+    # From scoring.py:251
+    if not is_valid_date(date):
+        invalid_date_events.append(f"{title} ({date})")
+        is_valid = False
+    ```
+  </Step>
+  
+  <Step title="Wrong Location">
+    Events outside SF/SJ/PA/MV get rejected:
+    
+    ```python
+    # From scoring.py:256
+    if not is_valid_location(location):
+        invalid_location_events.append(f"{title} ({location})")
+        is_valid = False
+    ```
+  </Step>
+  
+  <Step title="Non-AI Content">
+    Events not related to AI/ML get caught:
+    
+    ```python
+    # From scoring.py:261
+    if not is_ai_related(title):
+        non_ai_events.append(title)
+        is_valid = False
+    ```
+  </Step>
+  
+  <Step title="Invalid URLs">
+    Fake domains and non-event platforms rejected
+  </Step>
+</Steps>
+
+### Scoring
+
+```python
+Success: 100.0  # Runs without errors
+Quality: 12.0   # 0 valid events out of 5 total
+Speed: 92.0     # Very fast (instant return)
+Total: 34.4     # Fourth place
+```
+
+<Note>
+Agent Epsilon proves that **speed without quality is worthless**. Even with 92/100 speed score, the 12/100 quality score tanks the total to 34.4.
+</Note>
+
+---
+
+## Strategy Comparison
+
+<CardGroup cols={3}>
+  <Card title="🥇 Gamma: Insider" icon="trophy">
+    **92.3 total**
+    
+    - Quality: 94.3
+    - Speed: 78.3
+    - Strategy: Curated data
+    
+    **Why it wins**: Best balance of quality and speed through intelligent data sourcing
+  </Card>
+  
+  <Card title="🥈 Beta: Perfectionist" icon="medal">
+    **84.1 total**
+    
+    - Quality: 88.0
+    - Speed: 57.3
+    - Strategy: Thorough verification
+    
+    **Why second**: High quality, but slower execution costs points
+  </Card>
+  
+  <Card title="🥉 Alpha: Speed Demon" icon="medal">
+    **64.2 total**
+    
+    - Quality: 45.0
+    - Speed: 86.0
+    - Strategy: Fast shortcuts
+    
+    **Why third**: Speed can't overcome missing hackathon (-25 points)
+  </Card>
+</CardGroup>
+
+## Key Lessons
+
+<Steps>
+  <Step title="Quality is King">
+    With 60% weight, quality dominates. Agent Gamma's 94.3 quality beats Alpha's 86.0 speed every time.
+  </Step>
+  
+  <Step title="Requirements Are Hard Gates">
+    Missing the hackathon event costs Alpha 25 points. No amount of speed optimization can recover from failing a hard requirement.
+  </Step>
+  
+  <Step title="Smart Data Beats Brute Force">
+    Gamma's curated sources beat Beta's brute force verification. Knowing where to look is more valuable than looking everywhere.
+  </Step>
+  
+  <Step title="Failures Must Fail Fast">
+    Delta crashes immediately and gets DQ'd. Epsilon runs successfully but produces garbage. The system correctly penalizes both.
+  </Step>
+</Steps>
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Scoring System" href="/concepts/scoring-system" icon="star">
+    Understand how each criterion is calculated
+  </Card>
+  
+  <Card title="Five Phases" href="/concepts/five-phases" icon="diagram-project">
+    See where agent strategies fit in the overall pipeline
+  </Card>
+</CardGroup>

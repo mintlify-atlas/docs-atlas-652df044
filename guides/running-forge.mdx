@@ -1,0 +1,401 @@
+---
+title: Running the Forge
+description: Learn how to run the Dream Foundry forge loop to compete AI agents
+---
+
+The forge loop is the core of Dream Foundry. It runs multiple AI agent implementations in parallel, scores them, and selects the best approach.
+
+## Prerequisites
+
+Before running the forge, ensure you have:
+
+- Python 3.11+
+- Required dependencies installed
+- Optional: Daytona API key for sandbox execution
+- Optional: Sentry DSN for error monitoring
+
+<Note>
+The forge works both locally and in Daytona sandboxes. Local execution is faster for development, while Daytona provides true isolation.
+</Note>
+
+## Command Line Interface
+
+The forge is available through `forge.py` in the project root.
+
+### Basic Usage
+
+<Steps>
+  <Step title="Run with default objective">
+    ```bash
+    python forge.py
+    ```
+    
+    Uses the default objective: "Generate weekly 'AI Events in San Francisco' post for Discord"
+  </Step>
+  
+  <Step title="Run with custom objective">
+    ```bash
+    python forge.py "Create a weekly newsletter about AI events"
+    ```
+    
+    Or use the `--objective` flag:
+    ```bash
+    python forge.py --objective "Weekly SF AI events"
+    ```
+  </Step>
+  
+  <Step title="Run in Daytona sandboxes">
+    ```bash
+    python forge.py --daytona
+    ```
+    
+    Requires `DAYTONA_API_KEY` in your environment.
+  </Step>
+</Steps>
+
+### Command Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--objective` | `-o` | Specify the objective for agents to implement |
+| `--daytona` | `-d` | Run candidates in Daytona sandboxes |
+| `--help` | `-h` | Show help message |
+
+### Example Output
+
+When you run the forge, you'll see output like this:
+
+```bash
+============================================================
+DREAM FOUNDRY - Forge Loop
+============================================================
+Objective: Generate weekly AI events for Discord
+Candidates: 5
+Execution: LOCAL
+
+PHASE: Running Candidates
+----------------------------------------
+
+[Agent Alpha]
+  [Run] Starting Agent Alpha...
+  [Done] Output produced
+  [Done] 4.2s
+
+[Agent Beta]
+  [Run] Starting Agent Beta...
+  [Done] Output produced
+  [Done] 12.8s
+
+[Agent Gamma]
+  [Run] Starting Agent Gamma...
+  [Done] Output produced
+  [Done] 3.1s
+
+============================================================
+PHASE: Scoring
+----------------------------------------
+Candidate     Success  Quality    Speed    TOTAL   
+----------------------------------------------
+alpha         PASS     45.0       72.0     62.4    
+beta          PASS     88.5       57.3     79.7    
+gamma         PASS     95.2       89.7     92.8    
+
+============================================================
+WINNER: gamma (score: 92.8)
+============================================================
+```
+
+## Streamlit UI
+
+For a visual, step-by-step experience, use the Streamlit interface.
+
+### Starting the UI
+
+```bash
+streamlit run app.py
+```
+
+The UI will open at `http://localhost:8501`
+
+### UI Phases
+
+The Streamlit interface walks through all 5 phases of the Dream Foundry:
+
+<CardGroup cols={2}>
+  <Card title="1. Dreamcatcher" icon="moon">
+    Input your objective and constraints
+  </Card>
+  <Card title="2. Dream Factory" icon="industry">
+    View generated candidate approaches
+  </Card>
+  <Card title="3. Arena" icon="trophy">
+    Watch agents compete in real-time with live logs
+  </Card>
+  <Card title="4. Podium" icon="medal">
+    See CodeRabbit polish the top 3 candidates
+  </Card>
+  <Card title="5. Awakening" icon="sparkles">
+    Experience the winner with ElevenLabs narration
+  </Card>
+</CardGroup>
+
+### Live Execution Logs
+
+The Arena phase shows real-time logs from each candidate:
+
+```python
+# From app.py:304-308
+def log_callback(candidate_id: str, message: str):
+    if candidate_id in logs:
+        logs[candidate_id].append(message)
+        log_containers[candidate_id].code("\n".join(logs[candidate_id][-8:]))
+```
+
+This callback streams execution progress directly to the UI.
+
+## Understanding Execution Modes
+
+### Local Execution
+
+In local mode (default), candidates run as subprocesses on your machine:
+
+```python
+# From forge.py:154-160
+result = subprocess.run(
+    [sys.executable, script_path, objective, str(output_file)],
+    capture_output=True,
+    text=True,
+    timeout=60,
+    cwd=os.path.dirname(os.path.abspath(__file__)),
+)
+```
+
+**Advantages:**
+- Fast startup (no sandbox creation)
+- Easy debugging
+- No API dependencies
+
+**Disadvantages:**
+- No isolation between candidates
+- Shares system resources
+- Can't test different environments
+
+### Daytona Execution
+
+With `--daytona`, each candidate runs in an isolated sandbox:
+
+```python
+# From forge.py:241-246
+if execution_mode == "daytona":
+    daytona_results = run_all_candidates_in_daytona(
+        CANDIDATES, objective, artifacts_dir, log_callback
+    )
+```
+
+**Advantages:**
+- Complete isolation
+- Can test different Python versions
+- Parallel execution
+- Safer for untrusted code
+
+**Disadvantages:**
+- Slower startup (sandbox creation)
+- Requires API key
+- Network dependency
+
+<Warning>
+Daytona mode automatically falls back to local execution if `DAYTONA_API_KEY` is not configured.
+</Warning>
+
+## Scoring System
+
+The forge scores candidates on three criteria:
+
+### Success (20%)
+
+Did the candidate produce output without errors?
+
+```python
+# From scoring.py:376-377
+success = produced_output and not error_occurred
+```
+
+### Quality (60%)
+
+Does the output meet requirements?
+
+```python
+# From scoring.py:381-383
+if artifact_content:
+    quality = validate_quality(artifact_content)
+    quality_score = quality.score
+```
+
+Quality validation checks:
+- **Valid events**: 10+ events (40 points)
+- **Hackathon included**: Must have a hackathon event (25 points)
+- **Event count bonus**: 14+ events (20 points)
+- **No invalid events**: All events pass validation (15 points)
+
+### Speed (20%)
+
+Faster execution = higher score:
+
+```python
+# From scoring.py:332-338
+def calculate_speed_score(runtime_seconds: float, max_time: float = 30.0) -> float:
+    if runtime_seconds <= 0:
+        return 100.0
+    if runtime_seconds >= max_time:
+        return 0.0
+    return round(100 * (1 - runtime_seconds / max_time), 1)
+```
+
+### Final Score
+
+```python
+# From scoring.py:341-365
+def calculate_total_score(
+    success: bool,
+    quality_score: float,
+    speed_score: float,
+    weights: dict = None,
+) -> float:
+    if weights is None:
+        weights = {'success': 0.2, 'quality': 0.6, 'speed': 0.2}
+
+    if not success:
+        return 0.0
+
+    success_score = 100.0
+    total = (
+        success_score * weights['success'] +
+        quality_score * weights['quality'] +
+        speed_score * weights['speed']
+    )
+
+    return round(total, 1)
+```
+
+## Artifacts
+
+After a forge run, check the `artifacts/` directory:
+
+```
+artifacts/
+├── alpha/
+│   └── discord_post.md
+├── beta/
+│   └── discord_post.md
+├── gamma/
+│   └── discord_post.md
+├── scores.json
+└── winner.txt
+```
+
+### scores.json
+
+Complete scoring breakdown:
+
+```json
+{
+  "objective": "Generate weekly AI events for Discord",
+  "timestamp": "2026-01-24T10:30:00",
+  "execution_mode": "local",
+  "candidates": [
+    {
+      "candidate_id": "gamma",
+      "success": true,
+      "quality_score": 95.2,
+      "speed_score": 89.7,
+      "total_score": 92.8,
+      "quality_details": {
+        "passed": true,
+        "total_events": 10,
+        "valid_events": 10,
+        "has_daytona_event": true
+      }
+    }
+  ],
+  "winner": "gamma",
+  "winner_score": 92.8
+}
+```
+
+### winner.txt
+
+Simple file containing just the winner's ID:
+
+```
+gamma
+```
+
+## Programmatic Usage
+
+You can also use the forge programmatically:
+
+```python
+from forge import run_forge, ForgeResult
+
+def my_log_callback(candidate_id: str, message: str):
+    print(f"[{candidate_id}] {message}")
+
+result: ForgeResult = run_forge(
+    objective="Create a weekly AI newsletter",
+    use_daytona=True,
+    log_callback=my_log_callback
+)
+
+print(f"Winner: {result.winner_id}")
+print(f"Score: {result.winner_score}")
+print(f"Artifact:\n{result.winner_artifact}")
+```
+
+## Troubleshooting
+
+### No output produced
+
+Check that the candidate script:
+- Accepts two arguments: `objective` and `output_file`
+- Writes to the output file path
+- Exits with code 0 on success
+
+### Timeout errors
+
+Candidates have a 60-second timeout. If they exceed this:
+
+```python
+# From forge.py:184-187
+except subprocess.TimeoutExpired:
+    error_occurred = True
+    error_message = "Timeout after 60 seconds"
+    log("[Error] Timeout!")
+```
+
+Optimize slow candidates or increase the timeout in `forge.py:158`.
+
+### Daytona connection failed
+
+Ensure your API key is valid:
+
+```bash
+export DAYTONA_API_KEY="your_key_here"
+```
+
+Test with:
+
+```python
+from src.daytona_runner import is_daytona_configured
+print(is_daytona_configured())  # Should print True
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Creating Agents" href="/guides/creating-agents" icon="robot">
+    Learn how to create your own agent implementations
+  </Card>
+  <Card title="Sandbox Execution" href="/guides/sandbox-execution" icon="box">
+    Deep dive into Daytona sandbox integration
+  </Card>
+</CardGroup>

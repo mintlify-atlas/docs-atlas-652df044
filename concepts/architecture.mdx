@@ -1,0 +1,281 @@
+---
+title: 'System Architecture'
+description: 'Understand the Dream Foundry system design and data flow'
+---
+
+## Overview
+
+Dream Foundry implements a competitive agent architecture where multiple AI approaches compete to fulfill a founder's vision. The system orchestrates the entire lifecycle from idea intake to production deployment.
+
+## System Flow
+
+The architecture follows a linear pipeline with five distinct phases:
+
+```
+┌─────────────────┐
+│  DREAMCATCHER   │  ← Founder's raw idea (e.g., "I want X from CES")
+│  (Idea Intake)  │
+└────────┬────────┘
+         │ Structured idea brief
+         ▼
+┌─────────────────┐
+│  POC DREAM      │  ← Grooms What (requirements) + How (specification)
+│  FACTORY        │  → Generates N candidate approaches
+└────────┬────────┘
+         │ N candidates with specs
+         ▼
+┌─────────────────┐
+│  THE FORGE      │  ← Daytona: Build each candidate in sandbox
+│  (Build & Test) │  ← Sentry: Monitor errors/performance
+└────────┬────────┘  → Score each with weighted objectives
+         │ Top 3 candidates
+         ▼
+┌─────────────────┐
+│  POLISHING      │  ← CodeRabbit: AI code review
+│  (Code Quality) │  → Final tests, select winner
+└────────┬────────┘
+         │ Winner + polished code
+         ▼
+┌─────────────────┐
+│  THE SHOWCASE   │  ← Generate docs: Eng, Marketing, Exec
+│  (Documentation)│  ← ElevenLabs: Voice for podcasts/videos
+└────────┬────────┘
+         │ Full package
+         ▼
+┌─────────────────┐
+│  CHRYSALIS      │  ← Company dogfooding period
+│  (Validation)   │  → ROI analysis, market evaluation
+└─────────────────┘  → Launch decision
+```
+
+## Core Data Models
+
+### IdeaBrief
+
+Captures the founder's initial vision and constraints:
+
+```python
+@dataclass
+class IdeaBrief:
+    id: str
+    title: str
+    raw_description: str  # Founder's original brainfart
+    context: str          # Where it came from (CES, customer request, etc.)
+    aspirations: list[str]  # What success looks like
+    constraints: list[str]  # Budget, timeline, tech limitations
+    created_at: datetime
+```
+
+### Candidate
+
+Represents each competing implementation approach:
+
+```python
+@dataclass
+class Candidate:
+    id: str
+    idea_brief_id: str
+    approach_name: str
+    approach_description: str
+    tech_stack: list[str]
+    estimated_complexity: Literal["low", "medium", "high"]
+    code_scaffold: str  # Generated starter code
+    objectives: list[Objective]
+```
+
+### Objective
+
+Defines measurable goals with weighted importance:
+
+```python
+@dataclass
+class Objective:
+    name: str
+    description: str
+    measurement: str  # How to measure (e.g., "response_time < 200ms")
+    bias: Literal["H", "M", "L"]  # Weight multiplier
+
+    @property
+    def multiplier(self) -> int:
+        return {"H": 3, "M": 2, "L": 1}[self.bias]
+```
+
+<Note>
+Bias weights create a 3x/2x/1x multiplier system. High (H) objectives get 3x weight, Medium (M) get 2x, and Low (L) get 1x in final scoring.
+</Note>
+
+### ForgeResult
+
+Contains complete execution and scoring data:
+
+```python
+@dataclass
+class ForgeResult:
+    candidate_id: str
+    daytona_workspace_id: str
+    build_success: bool
+    test_results: dict
+    sentry_issues: list[dict]
+    performance_metrics: dict
+    objective_scores: dict[str, float]  # objective_name → score (0-100)
+    total_score: float  # Weighted sum
+```
+
+## Integration Points
+
+<CardGroup cols={2}>
+  <Card title="Daytona" icon="box">
+    **The Forge Phase**
+    - Create isolated workspace per candidate
+    - Execute build commands in sandbox
+    - Run test suites
+    - Capture execution metrics
+    - Cleanup workspaces after scoring
+  </Card>
+
+  <Card title="Sentry" icon="shield-check">
+    **The Forge Phase**
+    - Initialize per-candidate project
+    - Capture errors during build/test
+    - Track performance metrics
+    - Export issues for reliability scoring
+  </Card>
+
+  <Card title="CodeRabbit" icon="code">
+    **Polishing Phase**
+    - Submit top 3 candidates for review
+    - Parse improvement suggestions
+    - Apply automated fixes
+    - Verify improvements with re-testing
+  </Card>
+
+  <Card title="ElevenLabs" icon="microphone">
+    **Showcase Phase**
+    - Generate voice narration for:
+      - Engineering walkthrough
+      - Marketing pitch
+      - Executive summary
+    - Output: MP3 files for various audiences
+  </Card>
+</CardGroup>
+
+## Agent Communication
+
+Agents communicate via message passing (in-memory for hackathon, scalable to Redis/Kafka):
+
+```python
+class Message:
+    from_agent: str
+    to_agent: str
+    payload: Any
+    timestamp: datetime
+```
+
+## Configuration
+
+All system tunables are centralized in `config.yaml`:
+
+```yaml
+forge:
+  max_candidates: 5
+  build_timeout_seconds: 300
+  test_timeout_seconds: 120
+
+scoring:
+  bias_multipliers:
+    H: 3
+    M: 2
+    L: 1
+  top_n_for_polish: 3
+
+showcase:
+  voice_model: "eleven_multilingual_v2"
+  output_formats: ["mp3"]
+```
+
+## Execution Modes
+
+The Forge supports two execution modes:
+
+<Steps>
+  <Step title="Local Mode">
+    Runs candidates as subprocesses on the host machine. Fast for development, but no isolation.
+    
+    ```python
+    # From forge.py:121
+    result = subprocess.run(
+        [sys.executable, script_path, objective, str(output_file)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+    )
+    ```
+  </Step>
+
+  <Step title="Daytona Mode">
+    Runs candidates in isolated Daytona sandboxes. Full isolation, production-ready.
+    
+    ```python
+    # From forge.py:242
+    daytona_results = run_all_candidates_in_daytona(
+        CANDIDATES, objective, artifacts_dir, log_callback
+    )
+    ```
+  </Step>
+</Steps>
+
+## Data Flow Example
+
+Here's how data flows through the system for a typical run:
+
+<Steps>
+  <Step title="Idea Capture">
+    Founder submits: "I want a bot that posts AI events to Discord weekly"
+    
+    System creates IdeaBrief with objectives and constraints
+  </Step>
+
+  <Step title="Candidate Generation">
+    Factory generates 5 candidates:
+    - Alpha (Speed Demon)
+    - Beta (Perfectionist)
+    - Gamma (Insider)
+    - Delta (Crasher)
+    - Epsilon (Hallucinator)
+  </Step>
+
+  <Step title="Forge Execution">
+    Each candidate runs in Daytona sandbox:
+    - Sentry captures errors (Delta crashes)
+    - Performance metrics collected
+    - Artifacts generated (Discord posts)
+  </Step>
+
+  <Step title="Scoring">
+    Candidates scored on:
+    - Success (20%): Did it run without errors?
+    - Quality (60%): Does output meet requirements?
+    - Speed (20%): How fast did it execute?
+  </Step>
+
+  <Step title="Winner Selection">
+    Top scorer wins. CodeRabbit polishes the code, and it ships to production.
+  </Step>
+</Steps>
+
+<Note>
+The architecture prioritizes transparency and measurability. Every decision point has clear, objective criteria that can be audited and improved.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Five Phases" href="/concepts/five-phases" icon="diagram-project">
+    Deep dive into each phase of the Dream Foundry pipeline
+  </Card>
+  
+  <Card title="Scoring System" href="/concepts/scoring-system" icon="star">
+    Learn how candidates are evaluated and ranked
+  </Card>
+</CardGroup>
