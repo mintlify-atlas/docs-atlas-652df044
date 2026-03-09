@@ -1,0 +1,106 @@
+{
+  "projectType": "framework",
+  "projectName": "Dream Foundry",
+  "projectDescription": "A competitive AI agent orchestration platform where multiple AI agents tackle the same objective, run in isolated sandboxes, and compete to deliver the best solution.",
+  "theme": "aspen",
+  "primaryColor": "#94cb04",
+  "lightColor": "#545454",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/five-phases",
+              "concepts/scoring-system",
+              "concepts/agent-strategies"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/running-forge",
+              "guides/creating-agents",
+              "guides/sandbox-execution",
+              "guides/integrations"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/daytona",
+              "integrations/sentry",
+              "integrations/coderabbit",
+              "integrations/elevenlabs",
+              "integrations/discord"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/forge",
+              "api/scoring",
+              "api/validator"
+            ]
+          },
+          {
+            "group": "Candidate Agents",
+            "pages": [
+              "api/agents/alpha",
+              "api/agents/beta",
+              "api/agents/gamma",
+              "api/agents/delta",
+              "api/agents/epsilon"
+            ]
+          },
+          {
+            "group": "Integration Modules",
+            "pages": [
+              "api/daytona-runner",
+              "api/discord-poster",
+              "api/elevenlabs"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Multi-agent competition framework with isolated sandbox execution",
+    "Sophisticated scoring system (Success, Quality, Speed)",
+    "Integration with Daytona, Sentry, CodeRabbit, and ElevenLabs",
+    "Five-phase workflow from idea to production",
+    "Built-in agent strategies (Speed Demon, Perfectionist, Insider)",
+    "Real-time error monitoring and quality validation",
+    "CLI and Streamlit UI interfaces"
+  ],
+  "publicApiSurface": [
+    "run_forge(objective, use_daytona, log_callback)",
+    "score_candidate(candidate_id, produced_output, error_occurred, artifact_content, runtime_seconds, error_message)",
+    "validate_quality(markdown_content)",
+    "run_candidate_in_daytona(candidate, objective, artifacts_dir, log_callback)",
+    "post_winner_announcement(winner_id, winner_score, artifact_content, objective)",
+    "generate_audio(text)",
+    "CANDIDATES",
+    "ForgeResult",
+    "ScoreResult",
+    "QualityResult"
+  ]
+}
